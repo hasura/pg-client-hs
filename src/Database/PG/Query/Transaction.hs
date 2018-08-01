@@ -1,7 +1,8 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE FlexibleInstances     #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 module Database.PG.Query.Transaction
     ( TxIsolation(..)
@@ -33,15 +34,15 @@ module Database.PG.Query.Transaction
 import           Database.PG.Query.Class
 import           Database.PG.Query.Connection
 
-import           Control.Monad.Base
 import           Control.Monad.Except
+import           Control.Monad.Reader
 import           Data.Aeson
 import           Data.Aeson.Text
 import           GHC.Exts
 
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.Text                 as T
-import qualified Database.PostgreSQL.LibPQ as PQ
+import qualified Data.ByteString.Builder      as BB
+import qualified Data.Text                    as T
+import qualified Database.PostgreSQL.LibPQ    as PQ
 
 data TxIsolation
   = ReadCommitted
@@ -67,38 +68,20 @@ type TxMode = (TxIsolation, Maybe TxAccess)
 
 type Tx = TxE PGTxErr
 
-newtype TxE e a = TxE { txHandler :: PGConn -> ExceptT e IO a }
+newtype TxE e a
+  = TxE { txHandler :: ReaderT PGConn (ExceptT e IO) a }
+  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
 
+{-# INLINE catchE #-}
 catchE :: (e -> e') -> TxE e a -> TxE e' a
-catchE f action = TxE $ \c -> withExceptT f $ txHandler action c
-
-instance Functor (TxE e) where
-    fmap f (TxE h) = TxE (fmap f . h)
-
-instance Applicative (TxE e) where
-    pure = TxE . const . pure
-    TxE mf <*> TxE mx = TxE $ \ r -> mf r <*> mx r
-
-instance Monad (TxE e) where
-    return = pure
-    TxE m >>= k = TxE $ \ r -> do
-      x <- m r
-      let (TxE h) = k x
-      h r
-
-instance MonadIO (TxE e) where
-  liftIO action = TxE $ \_ -> liftIO action
-
-instance (MonadError e) (TxE e) where
-  throwError = TxE . const . throwError
-  catchError (TxE a) handler = TxE $ \c ->
-    catchError (a c) (\e -> txHandler (handler e) c)
+catchE f action = TxE $ mapReaderT (withExceptT f) $ txHandler action
 
 data PGTxErr
   = PGTxErr !T.Text ![PrepArg] !Bool !PGErrInternal
   -- | PGCustomErr !T.Text
   deriving (Eq)
 
+{-# INLINE getPGStmtErr #-}
 getPGStmtErr :: PGTxErr -> Maybe PGStmtErrDetail
 getPGStmtErr (PGTxErr _ _ _ ei) = case ei of
   PGIStatement e  -> return e
@@ -115,15 +98,16 @@ instance ToJSON PGTxErr where
 instance Show PGTxErr where
   show = show . encodeToLazyText
 
-execTx :: (MonadError e m, MonadBase IO m)
-       => PGConn -> TxE e a -> m a
-execTx conn tx = mapExceptIO id $ txHandler tx conn
+{-# INLINE execTx #-}
+execTx :: PGConn -> TxE e a -> ExceptT e IO a
+execTx conn tx = runReaderT (txHandler tx) conn
 
 newtype Query = Query { getQueryBuilder :: BB.Builder }
 
 instance IsString Query where
   fromString = Query . BB.stringUtf8
 
+{-# INLINE fromBuilder #-}
 fromBuilder :: BB.Builder -> Query
 fromBuilder = Query
 
@@ -158,7 +142,7 @@ rawQE :: (FromRes a)
       -> [PrepArg]
       -> Bool
       -> TxE e a
-rawQE ef q args prep = TxE $ \pgConn ->
+rawQE ef q args prep = TxE $ ReaderT $ \pgConn ->
   withExceptT (ef . txErrF) $
   execQuery pgConn $ PGQuery (mkTemplate stmt) args prep fromRes
   where
@@ -169,7 +153,7 @@ multiQE :: (FromRes a)
         => (PGTxErr -> e)
         -> Query
         -> TxE e a
-multiQE ef q = TxE $ \pgConn ->
+multiQE ef q = TxE $ ReaderT $ \pgConn ->
   withExceptT (ef . txErrF) $
   execMulti pgConn (mkTemplate stmt) fromRes
   where
@@ -182,17 +166,18 @@ multiQ :: (FromRes a)
 multiQ = multiQE id
 
 withNotices :: Tx a -> Tx (a, [T.Text])
-withNotices (TxE f) = TxE $ \pgConn@(PGConn conn _ _) -> do
-  setToNotice pgConn
+withNotices tx =  do
+  conn <- asks pgPQConn
+  setToNotice
   liftIO $ PQ.enableNoticeReporting conn
-  a <- f pgConn
+  a <- tx
   notices <- liftIO $ getNotices conn []
   liftIO $ PQ.disableNoticeReporting conn
-  setToWarn pgConn
+  setToWarn
   return (a, map lenientDecodeUtf8 notices)
   where
-    (TxE setToNotice) = unitQE id "SET client_min_messages TO NOTICE;" () False
-    (TxE setToWarn) = unitQE id "SET client_min_messages TO WARNING;" () False
+    setToNotice = unitQE id "SET client_min_messages TO NOTICE;" () False
+    setToWarn = unitQE id "SET client_min_messages TO WARNING;" () False
     getNotices conn xs = do
       notice <- PQ.getNotice conn
       case notice of

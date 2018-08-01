@@ -25,22 +25,20 @@ module Database.PG.Query.Connection
     , execQuery
     , toByteString
     , lenientDecodeUtf8
-    , mapExceptIO
     , PGErrInternal(..)
     , PGStmtErrDetail(..)
     ) where
 
 import           Control.Exception
 import           Control.Monad
-import           Control.Monad.Base
 import           Control.Monad.Except
 import           Data.Aeson
 import           Data.Aeson.Casing
 import           Data.Aeson.TH
 import           Data.Hashable
 import           Data.IORef
-import           Data.Monoid
 import           Data.Maybe
+import           Data.Monoid
 import           Data.Word
 import           GHC.Exts
 import           GHC.Generics
@@ -77,17 +75,6 @@ instance ToJSON PGExecStatus where
   toJSON (PGExecStatus pqStatus) =
     $(mkToJSON (aesonDrop 0 snakeCase) ''PQ.ExecStatus) pqStatus
 
-mapExceptIO
-  :: (MonadBase IO m, MonadError e2 m)
-  => (e1 -> e2)
-  -> ExceptT e1 IO a
-  -> m a
-mapExceptIO f action = do
-  res <- liftBase $ runExceptT action
-  case res of
-    Left e  -> throwError $ f e
-    Right a -> return a
-
 -- |
 -- Establish and initialize a conn.
 initPQConn
@@ -123,6 +110,7 @@ initPQConn ci = do
         _            -> throwIO $ PGConnErr "unexpected status after setting params"
     Nothing  -> throwIO $ PGConnErr "unexpected result after setting params"
 
+{-# INLINE toByteString #-}
 toByteString :: BB.Builder -> DB.ByteString
 toByteString = BL.toStrict . BB.toLazyByteString
 
@@ -189,28 +177,29 @@ data ResultOk
   | ResultOkData !PQ.Result
   deriving (Show, Eq)
 
+{-# INLINE getPQRes #-}
 getPQRes :: ResultOk -> PQ.Result
 getPQRes (ResultOkEmpty res) = res
 getPQRes (ResultOkData res)  = res
 
+{-# INLINE lenientDecodeUtf8 #-}
 lenientDecodeUtf8 :: DB.ByteString -> DT.Text
 lenientDecodeUtf8 = TE.decodeUtf8With TE.lenientDecode
 
 checkResult
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PQ.Connection
+  :: PQ.Connection
   -> Maybe PQ.Result
-  -> m ResultOk
+  -> ExceptT PGErrInternal IO ResultOk
 checkResult conn Nothing = do
   -- This is a fatal error.
-  mErr <- liftBase $ PQ.errorMessage conn
+  mErr <- lift $ PQ.errorMessage conn
   let msg = maybe mempty lenientDecodeUtf8 mErr
-  s <- liftBase $ PQ.status conn
-  when (s /= PQ.ConnectionOk) $ liftBase $ throwIO $ PGConnErr msg
+  s <- lift $ PQ.status conn
+  when (s /= PQ.ConnectionOk) $ lift $ throwIO $ PGConnErr msg
   throwError $
     PGIUnexpected $ "Fatal, OOM maybe? : " <> msg
 checkResult _ (Just res) = do
-  st <- liftBase $ PQ.resultStatus res
+  st <- lift $ PQ.resultStatus res
   -- validate the result status with the given function
   case st of
     PQ.CommandOk     -> return $ ResultOkEmpty res
@@ -226,7 +215,7 @@ checkResult _ (Just res) = do
     _                -> throwError $ PGIUnexpected $
                         "Unexpected execStatus : " <> DT.pack (show st)
   where
-    errField    = liftBase . PQ.resultErrorField res
+    errField    = lift . PQ.resultErrorField res
     withFullErr st = do
       code <- fmap lenientDecodeUtf8 <$> errField PQ.DiagSqlstate
       msg  <- fmap lenientDecodeUtf8 <$> errField PQ.DiagMessagePrimary
@@ -235,11 +224,11 @@ checkResult _ (Just res) = do
       throwError $ PGIStatement $
         PGStmtErrDetail (PGExecStatus st) code msg desc hint
 
+{-# INLINE assertResCmd #-}
 assertResCmd
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PQ.Connection
+  :: PQ.Connection
   -> Maybe PQ.Result
-  -> m ()
+  -> ExceptT PGErrInternal IO ()
 assertResCmd conn mRes = do
   resOk <- checkResult conn mRes
   case resOk of
@@ -248,37 +237,36 @@ assertResCmd conn mRes = do
       PGIUnexpected "cmd expected; tuples found"
 
 -- These are convenient wrappers around LibPQ's similar functions
+{-# INLINE prepare' #-}
 prepare'
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PQ.Connection           -- ^ connection
+  :: PQ.Connection           -- ^ connection
   -> RemoteKey               -- ^ stmtName
   -> Template                -- ^ query
   -> [PQ.Oid]                -- ^ paramTypes
-  -> m ()  -- ^ result
+  -> ExceptT PGErrInternal IO ()  -- ^ result
 prepare' conn rk (Template t) ol = do
-  mRes <- liftBase $ PQ.prepare conn rk t $ Just ol
+  mRes <- liftIO $ PQ.prepare conn rk t $ Just ol
   assertResCmd conn mRes
 
+{-# INLINE execPrepared #-}
 execPrepared
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PQ.Connection                -- ^ connection
+  :: PQ.Connection                -- ^ connection
   -> RemoteKey                    -- ^ stmtName
   -> [Maybe (DB.ByteString, PQ.Format)]           -- ^ parameters
-  -> m ResultOk -- ^ result
+  -> ExceptT PGErrInternal IO ResultOk -- ^ result
 execPrepared conn n args = do
-  mRes <- liftBase $ PQ.execPrepared conn n args PQ.Binary
+  mRes <- lift $ PQ.execPrepared conn n args PQ.Binary
   checkResult conn mRes
 
 -- Prevents a class of SQL injection attacks
 execParams
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PQ.Connection                 -- ^ connection
+  :: PQ.Connection                 -- ^ connection
   -> Template                      -- ^ statement
   -> [(PQ.Oid, Maybe (DB.ByteString, PQ.Format))]  -- ^ parameters
-  -> m ResultOk  -- ^ result
+  -> ExceptT PGErrInternal IO ResultOk  -- ^ result
 execParams conn (Template t) params = do
   let params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
-  mRes <- liftBase $ PQ.execParams conn t params' PQ.Binary
+  mRes <- lift $ PQ.execParams conn t params' PQ.Binary
   checkResult conn mRes
   where
     prependToTuple2 a (b, c) = (a, b, c)
@@ -298,6 +286,7 @@ data LocalKey
   = LocalKey !Template ![Word32]
   deriving (Show, Eq)
 
+{-# INLINE localKey #-}
 localKey :: Template -> [PQ.Oid] -> LocalKey
 localKey t ol =
   LocalKey t (map oidMapper ol)
@@ -308,6 +297,7 @@ newtype Template
   = Template DB.ByteString
   deriving (Show, Eq, Hashable)
 
+{-# INLINE mkTemplate #-}
 mkTemplate :: DB.ByteString -> Template
 mkTemplate = Template
 
@@ -320,28 +310,27 @@ instance Hashable LocalKey where
 type RemoteKey = DB.ByteString
 
 prepare
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PGConn
+  :: PGConn
   -> Template
   -> [PQ.Oid]
-  -> m RemoteKey
+  -> ExceptT PGErrInternal IO RemoteKey
 prepare (PGConn conn counter table) t tl = do
   let lk      = localKey t tl
-  rkm <- liftBase $ HI.lookup table lk
+  rkm <- lift $ HI.lookup table lk
   case rkm of
     -- Already prepared
     (Just rk) -> return rk
     -- Not found
     Nothing -> do
-      w <- liftBase $ readIORef counter
+      w <- lift $ readIORef counter
       -- Create a new unique remote key
       let rk = fromString $ show w
       -- prepare the statement
       prepare' conn rk t tl
       -- Insert into table
-      liftBase $ HI.insert table lk rk
+      lift $ HI.insert table lk rk
       -- Increment the counter
-      liftBase $ writeIORef counter (succ w)
+      lift $ writeIORef counter (succ w)
       return rk
 
 type PrepArg = (PQ.Oid, Maybe (DB.ByteString, PQ.Format))
@@ -363,11 +352,11 @@ instance ToJSON PGErrInternal where
   toJSON (PGIUnexpected msg)      = toJSON msg
   toJSON (PGIStatement errDetail) = toJSON errDetail
 
+{-# INLINE execQuery #-}
 execQuery
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PGConn
+  :: PGConn
   -> PGQuery a
-  -> m a
+  -> ExceptT PGErrInternal IO a
 execQuery pgConn@(PGConn conn _ _) (PGQuery t params preparable convF) = do
   resOk <- case preparable of
     True -> do
@@ -375,24 +364,24 @@ execQuery pgConn@(PGConn conn _ _) (PGQuery t params preparable convF) = do
       rk <- prepare pgConn t tl
       execPrepared conn rk vl
     False -> execParams conn t params
-  mapExceptIO PGIUnexpected $ convF resOk
+  withExceptT PGIUnexpected $ convF resOk
 
+{-# INLINE execMulti #-}
 execMulti
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PGConn
+  :: PGConn
   -> Template
   -> (ResultOk -> ExceptT DT.Text IO a)
-  -> m a
+  -> ExceptT PGErrInternal IO a
 execMulti (PGConn conn _ _) (Template t) convF = do
-  mRes  <- liftBase $ PQ.exec conn t
+  mRes  <- liftIO $ PQ.exec conn t
   resOk <- checkResult conn mRes
-  mapExceptIO PGIUnexpected $ convF resOk
+  withExceptT PGIUnexpected $ convF resOk
 
+{-# INLINE execCmd #-}
 execCmd
-  :: (MonadError PGErrInternal m, MonadBase IO m)
-  => PGConn
+  :: PGConn
   -> Template
-  -> m ()
+  -> ExceptT PGErrInternal IO ()
 execCmd (PGConn conn _ _) (Template t) = do
-  mRes <- liftBase $ PQ.execParams conn t [] PQ.Binary
+  mRes <- lift $ PQ.execParams conn t [] PQ.Binary
   assertResCmd conn mRes

@@ -116,29 +116,29 @@ class FromPGTxErr e where
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
-runTxOnConn :: (FromPGTxErr e, MonadError e m, MonadBaseControl IO m)
+runTxOnConn :: (FromPGTxErr e)
             => PGConn
             -> TxMode
-            -> (PGConn -> m a)
-            -> m a
+            -> (PGConn -> ExceptT e IO a)
+            -> ExceptT e IO a
 runTxOnConn pgConn txm f = do
   -- Begin the transaction. If there is an error, you shouldn't call abort
-  mapExceptIO fromPGTxErr $ execTx pgConn $ beginTx txm
+  withExceptT fromPGTxErr $ execTx pgConn $ beginTx txm
   -- Run the actual transaction and commit. If there is an error, abort
   flip catchError abort $ do
     a <- f pgConn
-    mapExceptIO fromPGTxErr $ execTx pgConn commitTx
+    withExceptT fromPGTxErr $ execTx pgConn commitTx
     return a
   where
     abort e = do
-      mapExceptIO fromPGTxErr $ execTx pgConn abortTx
+      withExceptT fromPGTxErr $ execTx pgConn abortTx
       throwError e
 
-withConn :: (FromPGTxErr e, FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
+withConn :: (FromPGTxErr e, FromPGConnErr e)
          => PGPool
          -> TxMode
-         -> (PGConn -> m a)
-         -> m a
+         -> (PGConn -> ExceptT e IO a)
+         -> ExceptT e IO a
 withConn pool txm f =
   catchConnErr action
   where
@@ -153,26 +153,26 @@ catchConnErr action =
   where
     handler = mkConnExHandler action fromPGConnErr
 
+{-# INLINE mkConnExHandler #-}
 mkConnExHandler :: (MonadError e m)
                 => m a
                 -> (PGConnErr -> e)
                 -> (PGConnErr -> m a)
 mkConnExHandler _ ef = throwError . ef
 
-runTx :: (FromPGTxErr e, FromPGConnErr e, MonadError e m, MonadIO m)
+runTx :: (FromPGTxErr e, FromPGConnErr e)
       => PGPool
       -> TxMode
       -> TxE e a
-      -> m a
+      -> ExceptT e IO a
 runTx pool txm tx = do
   res <- liftIO $ runExceptT $
          withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
   either throwError return res
 
-runTxOnConn' :: (MonadError e m, MonadBaseControl IO m)
-             => PGConn
+runTxOnConn' :: PGConn
              -> TxE e a
-             -> m a
+             -> ExceptT e IO a
 runTxOnConn' = execTx
 
 sql :: QuasiQuoter
