@@ -51,6 +51,7 @@ data TxIsolation
   deriving (Eq)
 
 instance Show TxIsolation where
+  {-# INLINE show #-}
   show ReadCommitted  = "ISOLATION LEVEL READ COMMITTED"
   show RepeatableRead = "ISOLATION LEVEL REPEATABLE READ"
   show Serializable   = "ISOLATION LEVEL SERIALIZABLE"
@@ -61,6 +62,7 @@ data TxAccess
   deriving (Eq)
 
 instance Show TxAccess where
+  {-# INLINE show #-}
   show ReadWrite = "READ WRITE"
   show ReadOnly  = "READ ONLY"
 
