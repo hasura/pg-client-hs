@@ -22,7 +22,6 @@ module Database.PG.Query.Class
 import           Control.Monad.Except
 import           Control.Monad.Identity
 import           Data.Int
-import           Data.Monoid
 import           Data.Scientific                  (Scientific)
 import           Data.Time
 import           Data.Word

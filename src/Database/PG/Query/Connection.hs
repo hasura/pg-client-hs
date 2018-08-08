@@ -38,7 +38,6 @@ import           Data.Aeson.TH
 import           Data.Hashable
 import           Data.IORef
 import           Data.Maybe
-import           Data.Monoid
 import           Data.Word
 import           GHC.Exts
 import           GHC.Generics

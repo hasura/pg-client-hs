@@ -32,7 +32,6 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.IORef
-import           Data.Monoid
 import           GHC.Exts                    (fromString)
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
