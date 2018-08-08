@@ -25,6 +25,7 @@ module Database.PG.Query.Transaction
     , multiQ
     , discardQ
     , discardQE
+    , serverVersion
     , execTx
     , fromBuilder
     , catchE
@@ -234,3 +235,9 @@ listQE :: (FromRow a, ToPrepArgs r)
        -> Bool
        -> TxE e [a]
 listQE = withQE
+
+serverVersion
+  :: TxE e Int
+serverVersion = do
+  conn <- asks pgPQConn
+  liftIO $ PQ.serverVersion conn
