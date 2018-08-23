@@ -44,6 +44,7 @@ import           GHC.Exts
 import qualified Data.ByteString.Builder      as BB
 import qualified Data.Text                    as T
 import qualified Database.PostgreSQL.LibPQ    as PQ
+import qualified Data.ByteString              as DB
 
 data TxIsolation
   = ReadCommitted
@@ -105,14 +106,13 @@ instance Show PGTxErr where
 execTx :: PGConn -> TxE e a -> ExceptT e IO a
 execTx conn tx = runReaderT (txHandler tx) conn
 
-newtype Query = Query { getQueryBuilder :: BB.Builder }
-
-instance IsString Query where
-  fromString = Query . BB.stringUtf8
+newtype Query
+  = Query { getQuery :: DB.ByteString }
+  deriving (Show, Eq, IsString)
 
 {-# INLINE fromBuilder #-}
 fromBuilder :: BB.Builder -> Query
-fromBuilder = Query
+fromBuilder = Query . toByteString
 
 withQ :: (FromRes a, ToPrepArgs r)
       => Query
@@ -150,7 +150,7 @@ rawQE ef q args prep = TxE $ ReaderT $ \pgConn ->
   execQuery pgConn $ PGQuery (mkTemplate stmt) args prep fromRes
   where
     txErrF = PGTxErr (lenientDecodeUtf8 stmt) args prep
-    stmt = toByteString $ getQueryBuilder q
+    stmt = getQuery q
 
 multiQE :: (FromRes a)
         => (PGTxErr -> e)
@@ -161,7 +161,7 @@ multiQE ef q = TxE $ ReaderT $ \pgConn ->
   execMulti pgConn (mkTemplate stmt) fromRes
   where
     txErrF = PGTxErr (lenientDecodeUtf8 stmt) [] False
-    stmt = toByteString $ getQueryBuilder q
+    stmt = getQuery q
 
 multiQ :: (FromRes a)
        => Query
