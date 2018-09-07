@@ -1,6 +1,5 @@
-{-# LANGUAGE FlexibleInstances          #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 module Database.PG.Query.Class
        ( WithCount(..)
@@ -333,6 +332,80 @@ instance (FromCol a, FromCol b, FromCol c, FromCol d, FromCol e, FromCol f, From
       return (a, b, c, d, e, f, g, h)
     c -> throwError $ colMismatch 8 c
 
+instance (FromCol a, FromCol b, FromCol c, FromCol d, FromCol e, FromCol f, FromCol g, FromCol h, FromCol i)
+  => FromRow (a, b, c, d, e, f, g, h, i) where
+
+  fromRow row = case V.length row of
+    9 -> do
+      a <- fromCol $ row V.! 0
+      b <- fromCol $ row V.! 1
+      c <- fromCol $ row V.! 2
+      d <- fromCol $ row V.! 3
+      e <- fromCol $ row V.! 4
+      f <- fromCol $ row V.! 5
+      g <- fromCol $ row V.! 6
+      h <- fromCol $ row V.! 7
+      i <- fromCol $ row V.! 8
+      return (a, b, c, d, e, f, g, h, i)
+    c -> throwError $ colMismatch 9 c
+
+instance (FromCol a, FromCol b, FromCol c, FromCol d, FromCol e, FromCol f, FromCol g, FromCol h, FromCol i, FromCol j)
+  => FromRow (a, b, c, d, e, f, g, h, i, j) where
+
+  fromRow row = case V.length row of
+    10 -> do
+      a <- fromCol $ row V.! 0
+      b <- fromCol $ row V.! 1
+      c <- fromCol $ row V.! 2
+      d <- fromCol $ row V.! 3
+      e <- fromCol $ row V.! 4
+      f <- fromCol $ row V.! 5
+      g <- fromCol $ row V.! 6
+      h <- fromCol $ row V.! 7
+      i <- fromCol $ row V.! 8
+      j <- fromCol $ row V.! 9
+      return (a, b, c, d, e, f, g, h, i, j)
+    c -> throwError $ colMismatch 10 c
+
+instance (FromCol a, FromCol b, FromCol c, FromCol d, FromCol e, FromCol f, FromCol g, FromCol h, FromCol i, FromCol j, FromCol k)
+  => FromRow (a, b, c, d, e, f, g, h, i, j, k) where
+
+  fromRow row = case V.length row of
+    11 -> do
+      a <- fromCol $ row V.! 0
+      b <- fromCol $ row V.! 1
+      c <- fromCol $ row V.! 2
+      d <- fromCol $ row V.! 3
+      e <- fromCol $ row V.! 4
+      f <- fromCol $ row V.! 5
+      g <- fromCol $ row V.! 6
+      h <- fromCol $ row V.! 7
+      i <- fromCol $ row V.! 8
+      j <- fromCol $ row V.! 9
+      k <- fromCol $ row V.! 10
+      return (a, b, c, d, e, f, g, h, i, j, k)
+    c -> throwError $ colMismatch 11 c
+
+instance (FromCol a, FromCol b, FromCol c, FromCol d, FromCol e, FromCol f, FromCol g, FromCol h, FromCol i, FromCol j, FromCol k, FromCol l)
+  => FromRow (a, b, c, d, e, f, g, h, i, j, k, l) where
+
+  fromRow row = case V.length row of
+    12 -> do
+      a <- fromCol $ row V.! 0
+      b <- fromCol $ row V.! 1
+      c <- fromCol $ row V.! 2
+      d <- fromCol $ row V.! 3
+      e <- fromCol $ row V.! 4
+      f <- fromCol $ row V.! 5
+      g <- fromCol $ row V.! 6
+      h <- fromCol $ row V.! 7
+      i <- fromCol $ row V.! 8
+      j <- fromCol $ row V.! 9
+      k <- fromCol $ row V.! 10
+      l <- fromCol $ row V.! 11
+      return (a, b, c, d, e, f, g, h, i, j, k, l)
+    c -> throwError $ colMismatch 12 c
+
 
 class FromRow a where
   fromRow :: ResultRow
@@ -474,4 +547,49 @@ instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPre
     , toPrepVal e
     , toPrepVal f
     , toPrepVal g
+    ]
+
+instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPrepArg f, ToPrepArg g, ToPrepArg h)
+  => ToPrepArgs (a, b, c, d, e, f, g, h) where
+
+  toPrepArgs (a, b, c, d, e, f, g, h) =
+    [ toPrepVal a
+    , toPrepVal b
+    , toPrepVal c
+    , toPrepVal d
+    , toPrepVal e
+    , toPrepVal f
+    , toPrepVal g
+    , toPrepVal h
+    ]
+
+instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPrepArg f, ToPrepArg g, ToPrepArg h, ToPrepArg i)
+  => ToPrepArgs (a, b, c, d, e, f, g, h, i) where
+
+  toPrepArgs (a, b, c, d, e, f, g, h, i) =
+    [ toPrepVal a
+    , toPrepVal b
+    , toPrepVal c
+    , toPrepVal d
+    , toPrepVal e
+    , toPrepVal f
+    , toPrepVal g
+    , toPrepVal h
+    , toPrepVal i
+    ]
+
+instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPrepArg f, ToPrepArg g, ToPrepArg h, ToPrepArg i, ToPrepArg j)
+  => ToPrepArgs (a, b, c, d, e, f, g, h, i, j) where
+
+  toPrepArgs (a, b, c, d, e, f, g, h, i, j) =
+    [ toPrepVal a
+    , toPrepVal b
+    , toPrepVal c
+    , toPrepVal d
+    , toPrepVal e
+    , toPrepVal f
+    , toPrepVal g
+    , toPrepVal h
+    , toPrepVal i
+    , toPrepVal j
     ]
