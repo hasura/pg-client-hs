@@ -32,14 +32,14 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.IORef
-import           GHC.Exts                    (fromString)
+import           GHC.Exts                      (fromString)
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
 
-import qualified Data.ByteString.Builder     as BB
-import qualified Data.HashTable.IO           as HI
-import qualified Data.Pool                   as RP
-import qualified Database.PostgreSQL.LibPQ   as PQ
+import qualified Data.HashTable.IO             as HI
+import qualified Data.Pool                     as RP
+import qualified Data.Text                     as T
+import qualified Database.PostgreSQL.LibPQ     as PQ
 
 type PGPool = RP.Pool PGConn
 
@@ -98,7 +98,7 @@ beginTx :: TxMode -> Tx ()
 beginTx (i, w) =
   unitQ query () True
   where
-    query = fromBuilder $ BB.string7
+    query = fromText $ T.pack
       ("BEGIN " <> show i <> " " <> maybe "" show w)
 
 commitTx :: Tx ()

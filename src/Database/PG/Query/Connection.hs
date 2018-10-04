@@ -297,8 +297,8 @@ newtype Template
   deriving (Show, Eq, Hashable)
 
 {-# INLINE mkTemplate #-}
-mkTemplate :: DB.ByteString -> Template
-mkTemplate = Template
+mkTemplate :: DT.Text -> Template
+mkTemplate = Template . TE.encodeUtf8
 
 instance Hashable LocalKey where
   hashWithSalt salt (LocalKey template _) =

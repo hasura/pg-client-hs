@@ -9,9 +9,10 @@ import           Data.Functor.Identity
 import qualified Control.Exception            as E
 import qualified Criterion.Main               as C
 import qualified Data.ByteString              as B
-import qualified Data.ByteString.Builder      as BB
 import qualified Data.ByteString.Char8        as BC
 import qualified Data.FileEmbed               as FE
+import qualified Data.Text                    as T
+import qualified Data.Text.Encoding           as TE
 -- import qualified Data.Hashable                as Hash
 import           Data.Int
 import qualified Database.PG.Query            as Q
@@ -74,34 +75,34 @@ getPoolC = do
       connParams = Q.ConnParams 1 1 180
   Q.initPGPool connInfo connParams
 
-q1 :: B.ByteString
-q1 = $(FE.embedFile "bench/queries/artistByArtistId.sql")
+q1 :: T.Text
+q1 = $(FE.embedStringFile "bench/queries/artistByArtistId.sql")
 
 mkTx1C :: Bool -> CTx B.ByteString
 mkTx1C isPrepared =
   runIdentity . Q.getRow <$>
   Q.withQE Q.PGExecErrTx
-  (Q.fromBuilder $ BB.byteString q1) (Identity (3 :: Int64)) isPrepared
+  (Q.fromText q1) (Identity (3 :: Int64)) isPrepared
 
 mkTx1H :: Bool -> HTx B.ByteString
 mkTx1H isPrepared =
-  HT.statement 3 $ HS.Statement q1 encoder decoder isPrepared
+  HT.statement 3 $ HS.Statement (TE.encodeUtf8 q1) encoder decoder isPrepared
   where
     encoder = HE.param HE.int8
     decoder = HD.singleRow $ HD.column $ HD.custom $ \_ bs -> return bs
 
-q2 :: B.ByteString
-q2 = $(FE.embedFile "bench/queries/allArtists.sql")
+q2 :: T.Text
+q2 = $(FE.embedStringFile "bench/queries/allArtists.sql")
 
 mkTx2C :: Bool -> CTx B.ByteString
 mkTx2C isPrepared =
   runIdentity . Q.getRow <$>
   Q.withQE Q.PGExecErrTx
-  (Q.fromBuilder $ BB.byteString q2) () isPrepared
+  (Q.fromText q2) () isPrepared
 
 mkTx2H :: Bool -> HTx B.ByteString
 mkTx2H isPrepared =
-  HT.statement () $ HS.Statement q2 encoder decoder isPrepared
+  HT.statement () $ HS.Statement (TE.encodeUtf8 q2) encoder decoder isPrepared
   where
     encoder = HE.unit
     decoder = HD.singleRow $ HD.column $ HD.custom $ \_ bs -> return bs

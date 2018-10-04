@@ -27,9 +27,11 @@ module Database.PG.Query.Transaction
     , discardQE
     , serverVersion
     , execTx
-    , fromBuilder
     , catchE
     , Query
+    , fromText
+    , fromBuilder
+    , getQueryText
     ) where
 
 import           Database.PG.Query.Class
@@ -41,10 +43,9 @@ import           Data.Aeson
 import           Data.Aeson.Text
 import           GHC.Exts
 
-import qualified Data.ByteString.Builder      as BB
 import qualified Data.Text                    as T
 import qualified Database.PostgreSQL.LibPQ    as PQ
-import qualified Data.ByteString              as DB
+import qualified Text.Builder                 as TB
 
 data TxIsolation
   = ReadCommitted
@@ -107,12 +108,16 @@ execTx :: PGConn -> TxE e a -> ExceptT e IO a
 execTx conn tx = runReaderT (txHandler tx) conn
 
 newtype Query
-  = Query { getQuery :: DB.ByteString }
+  = Query { getQueryText :: T.Text }
   deriving (Show, Eq, IsString)
 
+{-# INLINE fromText #-}
+fromText :: T.Text -> Query
+fromText = Query
+
 {-# INLINE fromBuilder #-}
-fromBuilder :: BB.Builder -> Query
-fromBuilder = Query . toByteString
+fromBuilder :: TB.Builder -> Query
+fromBuilder = Query . TB.run
 
 withQ :: (FromRes a, ToPrepArgs r)
       => Query
@@ -149,8 +154,8 @@ rawQE ef q args prep = TxE $ ReaderT $ \pgConn ->
   withExceptT (ef . txErrF) $
   execQuery pgConn $ PGQuery (mkTemplate stmt) args prep fromRes
   where
-    txErrF = PGTxErr (lenientDecodeUtf8 stmt) args prep
-    stmt = getQuery q
+    txErrF = PGTxErr stmt args prep
+    stmt = getQueryText q
 
 multiQE :: (FromRes a)
         => (PGTxErr -> e)
@@ -160,8 +165,8 @@ multiQE ef q = TxE $ ReaderT $ \pgConn ->
   withExceptT (ef . txErrF) $
   execMulti pgConn (mkTemplate stmt) fromRes
   where
-    txErrF = PGTxErr (lenientDecodeUtf8 stmt) [] False
-    stmt = getQuery q
+    txErrF = PGTxErr stmt [] False
+    stmt = getQueryText q
 
 multiQ :: (FromRes a)
        => Query

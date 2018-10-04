@@ -38,6 +38,7 @@ library
                      , resource-pool
 
                      , text >= 1.2
+                     , text-builder >= 0.6
                      , bytestring >= 0.10
                      , hashtables
                      , time >= 1.6
@@ -74,6 +75,8 @@ benchmark pg-client-bench
 
                      , file-embed
                      , bytestring >= 0.10
+                     , text
+                     , text-builder >= 0.6
 
                      , postgresql-libpq
                      , hashable
