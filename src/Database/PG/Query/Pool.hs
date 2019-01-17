@@ -45,14 +45,15 @@ type PGPool = RP.Pool PGConn
 
 data ConnParams
   = ConnParams
-    { cpStripes  :: !Int
-    , cpConns    :: !Int
-    , cpIdleTime :: !Int
+    { cpStripes      :: !Int
+    , cpConns        :: !Int
+    , cpIdleTime     :: !Int
+    , cpAllowPrepare :: !Bool
     }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
-defaultConnParams = ConnParams 1 20 60
+defaultConnParams = ConnParams 1 20 60 True
 
 initPGPool :: ConnInfo
            -> ConnParams
@@ -66,7 +67,7 @@ initPGPool ci cp =
       pqConn  <- initPQConn ci
       ctr     <- newIORef 0
       table   <- HI.new
-      return $ PGConn pqConn ctr table
+      return $ PGConn pqConn (cpAllowPrepare cp) ctr table
     destroyer = PQ.finish . pgPQConn
     diffTime  = fromIntegral $ cpIdleTime cp
 
