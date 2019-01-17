@@ -272,9 +272,10 @@ execParams conn (Template t) params = do
 
 data PGConn
   = PGConn
-  { pgPQConn  :: !PQ.Connection
-  , pgCounter :: !(IORef Word16)
-  , pgTable   :: !RKLookupTable
+  { pgPQConn       :: !PQ.Connection
+  , pgAllowPrepare :: !Bool
+  , pgCounter      :: !(IORef Word16)
+  , pgTable        :: !RKLookupTable
   }
 
 type RKLookupTable = HI.BasicHashTable LocalKey RemoteKey
@@ -313,7 +314,7 @@ prepare
   -> Template
   -> [PQ.Oid]
   -> ExceptT PGErrInternal IO RemoteKey
-prepare (PGConn conn counter table) t tl = do
+prepare (PGConn conn _ counter table) t tl = do
   let lk      = localKey t tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
@@ -356,8 +357,8 @@ execQuery
   :: PGConn
   -> PGQuery a
   -> ExceptT PGErrInternal IO a
-execQuery pgConn@(PGConn conn _ _) (PGQuery t params preparable convF) = do
-  resOk <- case preparable of
+execQuery pgConn@(PGConn conn allowPrepare _ _) (PGQuery t params preparable convF) = do
+  resOk <- case allowPrepare && preparable of
     True -> do
       let (tl, vl) = unzip params
       rk <- prepare pgConn t tl
@@ -371,7 +372,7 @@ execMulti
   -> Template
   -> (ResultOk -> ExceptT DT.Text IO a)
   -> ExceptT PGErrInternal IO a
-execMulti (PGConn conn _ _) (Template t) convF = do
+execMulti (PGConn conn _ _ _) (Template t) convF = do
   mRes  <- liftIO $ PQ.exec conn t
   resOk <- checkResult conn mRes
   withExceptT PGIUnexpected $ convF resOk
@@ -381,6 +382,6 @@ execCmd
   :: PGConn
   -> Template
   -> ExceptT PGErrInternal IO ()
-execCmd (PGConn conn _ _) (Template t) = do
+execCmd (PGConn conn _ _ _) (Template t) = do
   mRes <- lift $ PQ.execParams conn t [] PQ.Binary
   assertResCmd conn mRes
