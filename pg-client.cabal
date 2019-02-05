@@ -21,6 +21,7 @@ library
                      , Database.PG.Query.Connection
                      , Database.PG.Query.Transaction
                      , Database.PG.Query.Pool
+                     , Database.PG.Query.Listen
 
   build-depends:       base >= 4.7 && < 5
                      , attoparsec >= 0.13
@@ -46,6 +47,7 @@ library
                      , scientific >= 0.3
 
                      , postgresql-libpq
+                     , select
 
   default-language:    Haskell2010
   ghc-options:         -Wall
