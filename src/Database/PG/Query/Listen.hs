@@ -48,25 +48,28 @@ listen pool channel handler = catchConnErr $
     either throwTxErr return eRes
     forever $ do
       let conn = pgPQConn pgConn
-
       -- Make postgres connection ready for reading
       r <- liftIO $ runExceptT $ mkConnReady conn
       either (throwError . fromPGConnErr) return r
-
       -- Check for input
       success <- liftIO $ PQ.consumeInput conn
       unless success throwConsumeFailed
-      liftIO $ do
-        -- Collect notification
-        mNotify <- PQ.notifies conn
-        -- Apply handler on arrived notification
-        onJust mNotify handler
+      liftIO $ processNotifs conn
   where
     listenCmd = "LISTEN  " <> getChannelTxt channel <> ";"
     throwTxErr =
       throwError . fromPGTxErr . PGTxErr listenCmd [] False
     throwConsumeFailed = throwError $ fromPGConnErr $
       PGConnErr "consuming input failed from postgres connection"
+
+    processNotifs conn = do
+      -- Collect notification
+      mNotify <- PQ.notifies conn
+      onJust mNotify $ \n -> do
+        -- Apply handler on arrived notification
+        handler n
+        -- Process remaining notifications if any
+        processNotifs conn
 
 mkConnReady :: PQ.Connection -> ExceptT PGConnErr IO ()
 mkConnReady conn = do
