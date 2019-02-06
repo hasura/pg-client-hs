@@ -1,6 +1,7 @@
-{-# LANGUAGE FlexibleContexts      #-}
-{-# LANGUAGE MultiParamTypeClasses #-}
-{-# LANGUAGE OverloadedStrings     #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
 
 -- Reference:- https://github.com/hasura/skor/blob/master/src/skor.c
 
@@ -18,6 +19,7 @@ import           Database.PG.Query.Transaction
 import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Pool                     (withResource)
+import           Data.String
 
 import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
@@ -27,7 +29,7 @@ import qualified System.Posix.IO.Select.Types  as PS
 
 newtype PGChannel
   = PGChannel {getChannelTxt :: T.Text}
-  deriving(Show, Eq)
+  deriving(Show, Eq, IsString)
 
 type NotifyHandler = PQ.Notify -> IO ()
 
@@ -49,7 +51,7 @@ listen pool channel handler = catchConnErr $
     forever $ do
       let conn = pgPQConn pgConn
       -- Make postgres connection ready for reading
-      r <- liftIO $ runExceptT $ mkConnReady conn
+      r <- liftIO $ runExceptT $ waitForReadReadiness conn
       either (throwError . fromPGConnErr) return r
       -- Check for input
       success <- liftIO $ PQ.consumeInput conn
@@ -71,8 +73,8 @@ listen pool channel handler = catchConnErr $
         -- Process remaining notifications if any
         processNotifs conn
 
-mkConnReady :: PQ.Connection -> ExceptT PGConnErr IO ()
-mkConnReady conn = do
+waitForReadReadiness :: PQ.Connection -> ExceptT PGConnErr IO ()
+waitForReadReadiness conn = do
   -- Get file descriptor of underlying socket of a connection
   mFd <- lift $ PQ.socket conn
   onJust mFd withFd
