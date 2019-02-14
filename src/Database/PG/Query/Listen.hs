@@ -7,7 +7,7 @@
 
 module Database.PG.Query.Listen
   ( PGChannel(..)
-  , NotifyHandler
+  , NotifyHandler(..)
   , listen
   )
 where
@@ -31,7 +31,11 @@ newtype PGChannel
   = PGChannel {getChannelTxt :: T.Text}
   deriving(Show, Eq, IsString)
 
-type NotifyHandler = PQ.Notify -> IO ()
+data NotifyHandler
+  = NotifyHandler
+  { _nhOnReconn :: IO ()
+  , _nOnMessage :: PQ.Notify -> IO ()
+  }
 
 -- | listen on given channel
 listen
@@ -44,12 +48,19 @@ listen
   => PGPool -> PGChannel -> NotifyHandler -> m ()
 listen pool channel handler = catchConnErr $
   withResource pool $ \pgConn -> do
+    let conn = pgPQConn pgConn
+    -- Check connection health
+    connStatus <- liftIO $ PQ.status conn
+    unless (isConnOk connStatus) $ do
+      -- Try to reconnect and execute onReconn
+      tryReConn conn
+      liftIO onReconn
+
     -- Issue listen command
     eRes <- liftIO $ runExceptT $
             execMulti pgConn (mkTemplate listenCmd) $ const $ return ()
     either throwTxErr return eRes
     forever $ do
-      let conn = pgPQConn pgConn
       -- Make postgres connection ready for reading
       r <- liftIO $ runExceptT $ waitForReadReadiness conn
       either (throwError . fromPGConnErr) return r
@@ -58,18 +69,26 @@ listen pool channel handler = catchConnErr $
       unless success throwConsumeFailed
       liftIO $ processNotifs conn
   where
+    NotifyHandler onReconn onMessage = handler
     listenCmd = "LISTEN  " <> getChannelTxt channel <> ";"
     throwTxErr =
       throwError . fromPGTxErr . PGTxErr listenCmd [] False
     throwConsumeFailed = throwError $ fromPGConnErr $
       PGConnErr "consuming input failed from postgres connection"
 
+    tryReConn conn = do
+      liftIO $ PQ.reset conn
+      connStatus <- liftIO $ PQ.status conn
+      unless (isConnOk connStatus) $ tryReConn conn
+
+    isConnOk = (== PQ.ConnectionOk)
+
     processNotifs conn = do
       -- Collect notification
       mNotify <- PQ.notifies conn
       onJust mNotify $ \n -> do
-        -- Apply handler on arrived notification
-        handler n
+        -- Apply message handler on arrived notification
+        onMessage n
         -- Process remaining notifications if any
         processNotifs conn
 

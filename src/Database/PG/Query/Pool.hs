@@ -57,17 +57,20 @@ defaultConnParams = ConnParams 1 20 60 True
 
 initPGPool :: ConnInfo
            -> ConnParams
+           -> PGRetryPolicy
+           -> PGRetryPolicyInit
+           -> PGLogger
            -> IO PGPool
-initPGPool ci cp =
+initPGPool ci cp retryP retryPInit logger =
   RP.createPool creator destroyer nStripes diffTime nConns
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
     creator   = do
-      pqConn  <- initPQConn ci
+      pqConn  <- initPQConn ci retryPInit logger
       ctr     <- newIORef 0
       table   <- HI.new
-      return $ PGConn pqConn (cpAllowPrepare cp) ctr table
+      return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table
     destroyer = PQ.finish . pgPQConn
     diffTime  = fromIntegral $ cpIdleTime cp
 
@@ -149,7 +152,7 @@ catchConnErr :: (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
              => m a
              -> m a
 catchConnErr action =
-  control $ \runInIO -> (runInIO action) `catch` (runInIO . handler)
+  control $ \runInIO -> runInIO action `catch` (runInIO . handler)
   where
     handler = mkConnExHandler action fromPGConnErr
 

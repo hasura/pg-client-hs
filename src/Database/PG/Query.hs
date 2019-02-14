@@ -8,8 +8,11 @@ module Database.PG.Query
 
 import           Database.PG.Query.Class
 import           Database.PG.Query.Connection  (ConnInfo (..), PGConn (..),
-                                                PGConnErr (..), PrepArg,
-                                                ResultOk (..), Template)
+                                                PGConnErr (..), PGLogger,
+                                                PGRetryPolicy,
+                                                PGRetryPolicyInit, PrepArg,
+                                                ResultOk (..), Template,
+                                                mkPGRetryPolicy)
 import           Database.PG.Query.Listen
 import           Database.PG.Query.Pool
 import           Database.PG.Query.Transaction
