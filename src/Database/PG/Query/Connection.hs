@@ -64,6 +64,7 @@ data ConnInfo
     , connPassword :: !String
     , connDatabase :: !String
     , connOptions  :: !(Maybe String)
+    , connRetries  :: !Int
     }
   deriving (Eq, Read, Show)
 
@@ -105,10 +106,9 @@ pgRetrying resetFn retryP logger action = do
 -- Establish and initialize a conn.
 initPQConn
   :: ConnInfo
-  -> PGRetryPolicyInit
   -> PGLogger
   -> IO PQ.Connection
-initPQConn ci retryP logger =
+initPQConn ci logger =
   -- Retry if postgres connection error occurs
   pgRetrying resetFn retryP logger $ do
 
@@ -121,6 +121,7 @@ initPQConn ci retryP logger =
     bool (whenConnNotOk conn) (whenConnOk conn) connOk
   where
     resetFn = return ()
+    retryP = mkPGRetryPolicy $ connRetries ci
 
     whenConnNotOk conn = do
       m <- PQ.errorMessage conn
@@ -165,6 +166,7 @@ defaultConnInfo =
            , connPassword = ""
            , connDatabase = ""
            , connOptions = Nothing
+           , connRetries = 0
            }
 
 pgConnString :: ConnInfo -> DB.ByteString

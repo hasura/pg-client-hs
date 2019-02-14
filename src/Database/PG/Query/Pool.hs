@@ -57,17 +57,16 @@ defaultConnParams = ConnParams 1 20 60 True
 
 initPGPool :: ConnInfo
            -> ConnParams
-           -> PGRetryPolicy
-           -> PGRetryPolicyInit
            -> PGLogger
            -> IO PGPool
-initPGPool ci cp retryP retryPInit logger =
+initPGPool ci cp logger =
   RP.createPool creator destroyer nStripes diffTime nConns
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
+    retryP = mkPGRetryPolicy $ connRetries ci
     creator   = do
-      pqConn  <- initPQConn ci retryPInit logger
+      pqConn  <- initPQConn ci logger
       ctr     <- newIORef 0
       table   <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table
