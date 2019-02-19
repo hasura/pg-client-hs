@@ -11,10 +11,10 @@ module Database.PG.Query.Connection
     , ConnInfo(..)
     , PGQuery(..)
     , PGRetryPolicy
-    , PGRetryPolicyInit
     , mkPGRetryPolicy
     , PGLogger
     , PGConn(..)
+    , resetPGConn
     , PGConnErr(..)
     , ResultOk(..)
     , getPQRes
@@ -97,8 +97,8 @@ pgRetrying resetFn retryP logger action = do
     onError rs = do
       let retryIterNo = CR.rsIterNumber rs
       liftIO $ do
-        logger $ "postgres connection failed, retrying "
-               <> DT.pack (show retryIterNo) <> " time(s)."
+        logger $ "postgres connection failed, retrying("
+               <> DT.pack (show retryIterNo) <> ")."
         resetFn
       return True
 
@@ -135,7 +135,7 @@ initPQConn ci logger =
       bool (whenSerVerNotOk v) (whenSerVerOk conn) serVerOk
 
     whenSerVerNotOk v =
-      return $ Left $
+      throwIO $
         PGConnErr $ "Unsupported postgres version : " <> fromString (show v)
 
     whenSerVerOk conn = do
@@ -344,7 +344,6 @@ execParams conn (Template t) params = do
 
 type PGRetryPolicyM m = CR.RetryPolicyM m
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
-type PGRetryPolicyInit = PGRetryPolicyM IO
 
 type PGLogger = DT.Text -> IO ()
 
@@ -369,10 +368,13 @@ data PGConn
 
 resetPGConn :: PGConn -> IO ()
 resetPGConn (PGConn conn _ _ _ ctr ht) = do
+  -- Reset LibPQ connection
   PQ.reset conn
+  -- Set counter to 0
   writeIORef ctr 0
+  -- Flush all items in hash table
   keys <- map fst <$> HI.toList ht
-  mapM_ (HI.delete ht) keys
+  forM_ keys $ HI.delete ht
 
 type RKLookupTable = HI.BasicHashTable LocalKey RemoteKey
 

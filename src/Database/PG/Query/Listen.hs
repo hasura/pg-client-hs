@@ -53,7 +53,7 @@ listen pool channel handler = catchConnErr $
     connStatus <- liftIO $ PQ.status conn
     unless (isConnOk connStatus) $ do
       -- Try to reconnect and execute onReconn
-      tryReConn conn
+      tryReConn pgConn
       liftIO onReconn
 
     -- Issue listen command
@@ -76,10 +76,10 @@ listen pool channel handler = catchConnErr $
     throwConsumeFailed = throwError $ fromPGConnErr $
       PGConnErr "consuming input failed from postgres connection"
 
-    tryReConn conn = do
-      liftIO $ PQ.reset conn
-      connStatus <- liftIO $ PQ.status conn
-      unless (isConnOk connStatus) $ tryReConn conn
+    tryReConn pgConn = do
+      liftIO $ resetPGConn pgConn
+      connStatus <- liftIO $ PQ.status $ pgPQConn pgConn
+      unless (isConnOk connStatus) $ tryReConn pgConn
 
     isConnOk = (== PQ.ConnectionOk)
 
