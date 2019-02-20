@@ -166,7 +166,7 @@ defaultConnInfo =
            , connPassword = ""
            , connDatabase = ""
            , connOptions = Nothing
-           , connRetries = 0
+           , connRetries = 1
            }
 
 pgConnString :: ConnInfo -> DB.ByteString
