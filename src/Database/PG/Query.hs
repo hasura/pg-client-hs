@@ -7,9 +7,10 @@ module Database.PG.Query
     ) where
 
 import           Database.PG.Query.Class
-import           Database.PG.Query.Connection  (ConnInfo (..), PGConn (..),
-                                                PGConnErr (..), PrepArg,
-                                                ResultOk (..), Template)
+import           Database.PG.Query.Connection  (ConnInfo (..), ConnOptions (..),
+                                                PGConn (..), PGConnErr (..),
+                                                PrepArg, ResultOk (..),
+                                                Template)
 import           Database.PG.Query.Listen
 import           Database.PG.Query.Pool
 import           Database.PG.Query.Transaction

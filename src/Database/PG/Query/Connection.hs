@@ -9,6 +9,7 @@ module Database.PG.Query.Connection
     ( initPQConn
     , defaultConnInfo
     , ConnInfo(..)
+    , ConnOptions(..)
     , PGQuery(..)
     , PGConn(..)
     , PGConnErr(..)
@@ -51,16 +52,20 @@ import qualified Data.Text.Encoding           as TE
 import qualified Data.Text.Encoding.Error     as TE
 import qualified Database.PostgreSQL.LibPQ    as PQ
 
-data ConnInfo
-  = ConnInfo
+data ConnOptions
+  = ConnOptions
     { connHost     :: !String
     , connPort     :: !Int
     , connUser     :: !String
     , connPassword :: !String
     , connDatabase :: !String
     , connOptions  :: !(Maybe String)
-    }
-  deriving (Eq, Read, Show)
+    } deriving (Eq, Read, Show)
+
+data ConnInfo
+  = CIDatabaseURI !DB.ByteString
+  | CIOptions !ConnOptions
+  deriving (Show, Read, Eq)
 
 newtype PGConnErr = PGConnErr { getConnErr :: DT.Text }
   deriving (Show, Eq, ToJSON)
@@ -114,40 +119,40 @@ toByteString :: BB.Builder -> DB.ByteString
 toByteString = BL.toStrict . BB.toLazyByteString
 
 defaultConnInfo :: ConnInfo
-defaultConnInfo =
-  ConnInfo { connHost = "127.0.0.1"
-           , connPort = 5432
-           , connUser = "postgres"
-           , connPassword = ""
-           , connDatabase = ""
-           , connOptions = Nothing
-           }
+defaultConnInfo = CIOptions
+  ConnOptions { connHost = "127.0.0.1"
+              , connPort = 5432
+              , connUser = "postgres"
+              , connPassword = ""
+              , connDatabase = ""
+              , connOptions = Nothing
+              }
 
 pgConnString :: ConnInfo -> DB.ByteString
-pgConnString connInfo = fromString connstr
+pgConnString (CIDatabaseURI uri) = uri
+pgConnString (CIOptions opts)    = fromString connstr
   where
     connstr = str "host="     connHost
             $ num "port="     connPort
             $ str "user="     connUser
             $ str "password=" connPassword
             $ str "dbname="   connDatabase
-            $ mStr "options=" connOptions
-            $ []
+            $ mStr "options=" connOptions []
 
     str name field
       | null value = id
       | otherwise  = showString name . quote value . space
-        where value = field connInfo
+        where value = field opts
 
     mStr name field
       | null value = id
       | otherwise  = showString name . quote value . space
-        where value = fromMaybe "" (field connInfo)
+        where value = fromMaybe "" (field opts)
 
     num name field
       | value <= 0 = id
       | otherwise  = showString name . shows value . space
-        where value = field connInfo
+        where value = field opts
 
     quote s rest = '\'' : foldr delta ('\'' : rest) s
        where
