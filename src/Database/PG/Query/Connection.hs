@@ -12,6 +12,7 @@ module Database.PG.Query.Connection
     , PGQuery(..)
     , PGRetryPolicy
     , mkPGRetryPolicy
+    , PGLogEvent(..)
     , PGLogger
     , PGConn(..)
     , resetPGConn
@@ -65,8 +66,7 @@ data ConnInfo
     , connDatabase :: !String
     , connOptions  :: !(Maybe String)
     , connRetries  :: !Int
-    }
-  deriving (Eq, Read, Show)
+    } deriving (Eq, Read, Show)
 
 newtype PGConnErr = PGConnErr { getConnErr :: DT.Text }
   deriving (Show, Eq, ToJSON)
@@ -79,6 +79,26 @@ newtype PGExecStatus = PGExecStatus PQ.ExecStatus
 instance ToJSON PGExecStatus where
   toJSON (PGExecStatus pqStatus) =
     $(mkToJSON (aesonDrop 0 snakeCase) ''PQ.ExecStatus) pqStatus
+
+type PGRetryPolicyM m = CR.RetryPolicyM m
+type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
+
+newtype PGLogEvent
+  = PLERetryMsg DT.Text
+  deriving (Show, Eq)
+
+type PGLogger = PGLogEvent -> IO ()
+
+type PGError = Either PGErrInternal PGConnErr
+type PGExec a = ExceptT PGError IO a
+
+throwPGIntErr
+  :: MonadError PGError m => PGErrInternal -> m a
+throwPGIntErr = throwError . Left
+
+throwPGConnErr
+  :: MonadError PGError m => PGConnErr -> m a
+throwPGConnErr = throwError . Right
 
 pgRetrying
   :: (MonadIO m)
@@ -97,8 +117,9 @@ pgRetrying resetFn retryP logger action = do
     onError rs = do
       let retryIterNo = CR.rsIterNumber rs
       liftIO $ do
-        logger $ "postgres connection failed, retrying("
-               <> DT.pack (show retryIterNo) <> ")."
+        logger $ PLERetryMsg $
+          "postgres connection failed, retrying("
+          <> DT.pack (show retryIterNo) <> ")."
         resetFn
       return True
 
@@ -166,7 +187,7 @@ defaultConnInfo =
            , connPassword = ""
            , connDatabase = ""
            , connOptions = Nothing
-           , connRetries = 1
+           , connRetries = 0
            }
 
 pgConnString :: ConnInfo -> DB.ByteString
@@ -232,25 +253,29 @@ lenientDecodeUtf8 = TE.decodeUtf8With TE.lenientDecode
 
 retryOnConnErr
   :: PGConn
-  -> ExceptT PGErrInternal IO (Either PGConnErr a)
+  -> PGExec a
   -> ExceptT PGErrInternal IO a
-retryOnConnErr pgConn =
-  pgRetrying resetFn retryP logger
+retryOnConnErr pgConn action =
+  pgRetrying resetFn retryP logger $ do
+    resE <- lift $ runExceptT action
+    case resE of
+      Right r -> return $ Right r
+      Left (Left pgIntErr) -> throwError pgIntErr
+      Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
     PGConn _ _ retryP logger _ _ = pgConn
 
-
 checkResult
   :: PQ.Connection
   -> Maybe PQ.Result
-  -> ExceptT PGErrInternal IO (Either PGConnErr ResultOk)
+  -> PGExec ResultOk
 checkResult conn mRes =
   case mRes of
     Nothing -> do
       -- This is a fatal error.
       msg <- getErrMsg
-      let whenConnOk = throwError $
+      let whenConnOk = throwPGIntErr $
                    PGIUnexpected $ "Fatal, OOM maybe? : " <> msg
       isConnOk >>= bool (whenConnNotOk msg) whenConnOk
 
@@ -258,8 +283,8 @@ checkResult conn mRes =
       st <- lift $ PQ.resultStatus res
       -- validate the result status with the given function
       case st of
-        PQ.CommandOk     -> return $ Right $ ResultOkEmpty res
-        PQ.TuplesOk      -> return $ Right $ ResultOkData res
+        PQ.CommandOk     -> return $ ResultOkEmpty res
+        PQ.TuplesOk      -> return $ ResultOkData res
 
         -- Any of these indicate error
         PQ.BadResponse   -> withFullErr res st
@@ -268,7 +293,7 @@ checkResult conn mRes =
         PQ.EmptyQuery    -> withFullErr res st
 
         -- Not error, but unexpected status like copy in or copy out
-        _                -> throwError $ PGIUnexpected $
+        _                -> throwPGIntErr $ PGIUnexpected $
                             "Unexpected execStatus : " <> DT.pack (show st)
   where
     isConnOk = do
@@ -279,7 +304,7 @@ checkResult conn mRes =
       mErr <- lift $ PQ.errorMessage conn
       return $ maybe mempty lenientDecodeUtf8 mErr
 
-    whenConnNotOk = return . Left . PGConnErr
+    whenConnNotOk = throwPGConnErr . PGConnErr
 
     whenFatalErr res st = do
       msg <- getErrMsg
@@ -291,30 +316,30 @@ checkResult conn mRes =
       msg  <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessagePrimary
       desc <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessageDetail
       hint <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessageHint
-      throwError $ PGIStatement $
+      throwPGIntErr $ PGIStatement $
         PGStmtErrDetail (PGExecStatus st) code msg desc hint
 
 {-# INLINE assertResCmd #-}
 assertResCmd
   :: PQ.Connection
   -> Maybe PQ.Result
-  -> ExceptT PGErrInternal IO (Either PGConnErr ())
+  -> PGExec ()
 assertResCmd conn mRes = do
-  resOkE <- checkResult conn mRes
-  either (return . Left) onResOk resOkE
+  resOk <- checkResult conn mRes
+  checkResOk resOk
   where
-    onResOk (ResultOkEmpty _) = return $ Right ()
-    onResOk (ResultOkData _) = throwError $
+    checkResOk (ResultOkEmpty _) = return ()
+    checkResOk (ResultOkData _) = throwPGIntErr $
       PGIUnexpected "cmd expected; tuples found"
 
 -- These are convenient wrappers around LibPQ's similar functions
 {-# INLINE prepare' #-}
 prepare'
-  :: PQ.Connection           -- ^ connection
-  -> RemoteKey               -- ^ stmtName
-  -> Template                -- ^ query
-  -> [PQ.Oid]                -- ^ paramTypes
-  -> ExceptT PGErrInternal IO (Either PGConnErr ())  -- ^ result
+  :: PQ.Connection  -- ^ connection
+  -> RemoteKey      -- ^ stmtName
+  -> Template       -- ^ query
+  -> [PQ.Oid]       -- ^ paramTypes
+  -> PGExec ()      -- ^ result
 prepare' conn rk (Template t) ol = do
   mRes <- liftIO $ PQ.prepare conn rk t $ Just ol
   assertResCmd conn mRes
@@ -324,7 +349,7 @@ execPrepared
   :: PQ.Connection                -- ^ connection
   -> [Maybe (DB.ByteString, PQ.Format)]           -- ^ parameters
   -> RemoteKey                    -- ^ stmtName
-  -> ExceptT PGErrInternal IO (Either PGConnErr ResultOk) -- ^ result
+  -> PGExec ResultOk -- ^ result
 execPrepared conn args n = do
   mRes <- lift $ PQ.execPrepared conn n args PQ.Binary
   checkResult conn mRes
@@ -334,7 +359,7 @@ execParams
   :: PQ.Connection                 -- ^ connection
   -> Template                      -- ^ statement
   -> [(PQ.Oid, Maybe (DB.ByteString, PQ.Format))]  -- ^ parameters
-  -> ExceptT PGErrInternal IO (Either PGConnErr ResultOk)  -- ^ result
+  -> PGExec ResultOk  -- ^ result
 execParams conn (Template t) params = do
   let params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
   mRes <- lift $ PQ.execParams conn t params' PQ.Binary
@@ -342,18 +367,15 @@ execParams conn (Template t) params = do
   where
     prependToTuple2 a (b, c) = (a, b, c)
 
-type PGRetryPolicyM m = CR.RetryPolicyM m
-type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
-
-type PGLogger = DT.Text -> IO ()
-
 mkPGRetryPolicy
   :: MonadIO m
   => Int           -- ^ no.of retries
   -> PGRetryPolicyM m
 mkPGRetryPolicy noRetries =
+    CR.limitRetriesByDelay limitDelay $
     CR.exponentialBackoff baseDelay <> CR.limitRetries noRetries
   where
+    limitDelay = 60 * 1000 * 100 -- 1 minute
     baseDelay = 100 * 1000 -- 0.1 second
 
 data PGConn
@@ -411,28 +433,26 @@ prepare
   :: PGConn
   -> Template
   -> [PQ.Oid]
-  -> ExceptT PGErrInternal IO (Either PGConnErr RemoteKey)
+  -> PGExec RemoteKey
 prepare (PGConn conn _ _ _ counter table) t tl = do
   let lk      = localKey t tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
     -- Already prepared
-    (Just rk) -> return $ Right rk
+    (Just rk) -> return rk
     -- Not found
     Nothing -> do
       w <- lift $ readIORef counter
       -- Create a new unique remote key
       let rk = fromString $ show w
       -- prepare the statement
-      resE <- prepare' conn rk t tl
-      let insTabAndUpdCntr _ = do
-            -- Insert into table
-            HI.insert table lk rk
-            -- Increment the counter
-            writeIORef counter (succ w)
-            return $ Right rk
-
-      lift $ either (return . Left) insTabAndUpdCntr resE
+      prepare' conn rk t tl
+      lift $ do
+        -- Insert into table
+        HI.insert table lk rk
+        -- Increment the counter
+        writeIORef counter (succ w)
+      return rk
 
 type PrepArg = (PQ.Oid, Maybe (DB.ByteString, PQ.Format))
 
@@ -468,8 +488,8 @@ execQuery pgConn pgQuery = do
     withoutPrepare = execParams conn t params
     withPrepare = do
       let (tl, vl) = unzip params
-      rkE <- prepare pgConn t tl
-      either (return . Left) (execPrepared conn vl) rkE
+      rk <- prepare pgConn t tl
+      execPrepared conn vl rk
 
 {-# INLINE execMulti #-}
 execMulti
