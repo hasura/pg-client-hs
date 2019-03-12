@@ -44,6 +44,7 @@ library
                      , hashtables
                      , time >= 1.6
                      , vector
+                     , unordered-containers
                      , scientific >= 0.3
 
                      , postgresql-libpq

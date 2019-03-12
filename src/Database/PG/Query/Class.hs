@@ -1,6 +1,16 @@
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE DataKinds                  #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
+{-# LANGUAGE TemplateHaskell            #-}
+{-# LANGUAGE TemplateHaskellQuotes      #-}
+{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 module Database.PG.Query.Class
        ( WithCount(..)
        , WithReturning(..)
@@ -16,14 +26,19 @@ module Database.PG.Query.Class
        , AltJ(..)
        , JSON (..)
        , JSONB (..)
+       , BinaryEncBuiltInTy(..)
+       , ToPrepArgBin
        ) where
 
 import           Control.Monad.Except
 import           Control.Monad.Identity
+import           Data.Foldable
 import           Data.Int
+import           Data.Proxy
 import           Data.Scientific                  (Scientific)
 import           Data.Time
 import           Data.Word
+import           Foreign.C.Types
 import           GHC.Exts
 
 import qualified Data.Aeson                       as J
@@ -426,70 +441,231 @@ instance ToPrepArg PrepArg where
 toPrepValHelper :: PQ.Oid -> (a -> PE.Encoding) -> a -> PrepArg
 toPrepValHelper o e a = (o, Just (PE.encodingBytes $ e a, PQ.Binary))
 
-instance (J.ToJSON a) => ToPrepArg (AltJ a) where
-  toPrepVal (AltJ a)  = toPrepValHelper PTI.json PE.bytea_lazy $ J.encode a
+data InstanceTy
+  = Elem
+  | ArrOf InstanceTy
+  | VectOf InstanceTy
+  | Other
+  deriving (Show, Eq)
 
-instance ToPrepArg Word64 where
-  toPrepVal = toPrepValHelper PTI.int8 PE.int8_word64
 
-instance ToPrepArg Int64 where
-  toPrepVal = toPrepValHelper PTI.int8 PE.int8_int64
+type family (F a) :: InstanceTy where
+  F (Maybe a)               = F a
+  F [a]                     = 'ArrOf (F a)
+  F (V.Vector a)            = 'VectOf (F a)
+  F (AltJ a)                = 'Elem
+  F Word64                  = 'Elem
+  F Int64                   = 'Elem
+  F Int32                   = 'Elem
+  F Int16                   = 'Elem
+  F Float                   = 'Elem
+  F Double                  = 'Elem
+  F Scientific              = 'Elem
+  F Char                    = 'Elem
+  F T.Text                  = 'Elem
+  F TL.Text                 = 'Elem
+  F B.ByteString            = 'Elem
+  F BL.ByteString           = 'Elem
+  F JSON                    = 'Elem
+  F JSONB                   = 'Elem
+  F LocalTime               = 'Elem
+  F UTCTime                 = 'Elem
+  F Bool                    = 'Elem
+  F _                       = 'Other
 
-instance ToPrepArg Int32 where
-  toPrepVal = toPrepValHelper PTI.int4 PE.int4_int32
+type PrepArgBinEnc = (PQ.Oid, Maybe PE.Encoding)
 
-instance ToPrepArg Int16 where
-  toPrepVal = toPrepValHelper PTI.int2 PE.int2_int16
+type ToPrepArgBin a = ToPrepArgBin' (F a) a
 
-instance ToPrepArg Float where
-  toPrepVal = toPrepValHelper PTI.float4 PE.float4
+class ToPrepArgBin' (instncTy :: InstanceTy) a where
+  toPrepVal' :: Proxy instncTy -> a -> PrepArgBinEnc
 
-instance ToPrepArg Double where
-  toPrepVal = toPrepValHelper PTI.float8 PE.float8
+instance {-# OVERLAPPABLE #-} (F a ~ instncTy, ToPrepArgBin' instncTy a) => ToPrepArg a where
+  toPrepVal x =
+    ( oid
+    , (,PQ.Binary) . PE.encodingBytes <$> binEnc
+    )
+    where (oid,binEnc) = toPrepVal' (Proxy :: Proxy instncTy) x
 
-instance ToPrepArg Scientific where
-  toPrepVal = toPrepValHelper PTI.numeric PE.numeric
+type ArrEncInfo' a = (PTI.ArrOid, PTI.ElemOid, a -> PE.Array)
 
-instance ToPrepArg Char where
-  toPrepVal = toPrepValHelper PTI.text PE.char_utf8
+class ArrBinaryEnc' a (b :: InstanceTy) where
+  paaBinEncInfo :: Proxy b -> ArrEncInfo' a
 
-instance ToPrepArg T.Text where
-  toPrepVal = toPrepValHelper PTI.text PE.text_strict
+instance BinaryEncBuiltInTy a => ArrBinaryEnc' (V.Vector a) ('VectOf 'Elem) where
+  paaBinEncInfo _ = encElemArray
 
-instance ToPrepArg TL.Text where
-  toPrepVal = toPrepValHelper PTI.text PE.text_lazy
+instance BinaryEncBuiltInTy a => ArrBinaryEnc' [a] ('ArrOf 'Elem) where
+  paaBinEncInfo _ = encElemArray
 
-instance ToPrepArg B.ByteString where
-  toPrepVal = toPrepValHelper PTI.bytea PE.bytea_strict
+encElemArray :: (BinaryEncBuiltInTy a, Foldable t)
+  => (PTI.ArrOid, PTI.ElemOid, t a -> PE.Array)
+encElemArray =
+  ( arrOid
+  , oid
+  , PE.dimensionArray foldl' $ maybe PE.nullArray PE.encodingArray . paBinaryEnc
+  )
+  where
+    (oid, arrOid, paBinaryEnc) = btBinaryEncInfo
 
-instance ToPrepArg BL.ByteString where
-  toPrepVal = toPrepValHelper PTI.bytea PE.bytea_lazy
+instance
+  ( F a ~ instncTy
+  , ArrBinaryEnc' (V.Vector a) ('VectOf instncTy)
+  )
+  => ArrBinaryEnc' (V.Vector (V.Vector a)) ('VectOf ('VectOf instncTy)) where
+    paaBinEncInfo _ = encArrArray (Proxy :: Proxy ('VectOf instncTy))
 
-instance ToPrepArg LocalTime where
-  toPrepVal = toPrepValHelper PTI.timestamp PE.timestamp_int
+instance
+  ( F a ~ instncTy
+  , ArrBinaryEnc' [a] ('ArrOf instncTy)
+  )
+  => ArrBinaryEnc' [[a]] ('ArrOf ('ArrOf instncTy)) where
+    paaBinEncInfo _ = encArrArray (Proxy :: Proxy ('ArrOf instncTy))
 
-instance ToPrepArg UTCTime where
-  toPrepVal = toPrepValHelper PTI.timestamptz PE.timestamptz_int
+encArrArray
+  :: (ArrBinaryEnc' a b, Foldable t)
+  => Proxy b -> (PTI.ArrOid, PTI.ElemOid, t a -> PE.Array)
+encArrArray ty =
+      ( paaOid
+      , paaArrOid
+      , \x -> PE.dimensionArray foldl' paaBinaryEnc x
+      )
+      where
+        (paaOid, paaArrOid, paaBinaryEnc)
+           = paaBinEncInfo ty
 
-instance ToPrepArg Bool where
-  toPrepVal = toPrepValHelper PTI.bool PE.bool
+instance
+  ( F a ~ instncTy
+  , ArrBinaryEnc' (V.Vector a) ('VectOf instncTy)
+  )
+  => ToPrepArgBin' ('VectOf instncTy) (V.Vector a) where
+       toPrepVal' _  = arrToBinEnc (Proxy :: Proxy ('VectOf instncTy))
 
-instance ToPrepArg Day where
-  toPrepVal = toPrepValHelper PTI.date PE.date
+instance
+  ( F a ~ instncTy
+  , ArrBinaryEnc' [a] ('ArrOf instncTy)
+  )
+  => ToPrepArgBin' ('ArrOf instncTy) [a] where
+       toPrepVal' _  = arrToBinEnc (Proxy :: Proxy ('ArrOf instncTy))
+
+arrToBinEnc
+  :: ArrBinaryEnc' a b
+  => Proxy b
+  -> a
+  -> (PQ.Oid, Maybe PE.Encoding)
+arrToBinEnc ty x =
+  ( arrOid
+  , Just $ PE.array (toWord32 elemOid) (arrEncF x)
+  )
+  where
+    toWord32 (PQ.Oid (CUInt z)) = z
+    (PTI.ArrOid arrOid, PTI.ElemOid elemOid, arrEncF) = paaBinEncInfo ty
+
+type EncInfoBuiltInTy a = (PTI.ElemOid, PTI.ArrOid, a -> Maybe PE.Encoding)
+
+class BinaryEncBuiltInTy a where
+  btBinaryEncInfo :: EncInfoBuiltInTy a
+
+instance BinaryEncBuiltInTy a => ToPrepArgBin' 'Elem a where
+  toPrepVal' _ x
+    = ( PTI.getElemOid paOid, paBinaryEncM x)
+    where
+      (paOid, _, paBinaryEncM) = btBinaryEncInfo
+
+instance BinaryEncBuiltInTy a => BinaryEncBuiltInTy (Maybe a) where
+  btBinaryEncInfo =
+     ( paOid
+     , paArrOid
+     , (paBinaryEnc =<<)
+     )
+     where
+       (paOid,paArrOid,paBinaryEnc) = btBinaryEncInfo
+
+binEncHelper :: (PTI.ElemOid, PTI.ArrOid) -> (a -> PE.Encoding) -> EncInfoBuiltInTy a
+binEncHelper (elemOid,arrOid) f = (elemOid,arrOid,Just . f)
+
+instance (J.ToJSON a) => BinaryEncBuiltInTy (AltJ a) where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.json) $ \(AltJ x) -> PE.bytea_lazy $ J.encode x
+
+instance BinaryEncBuiltInTy Word64 where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.int8) PE.int8_word64
+  --toPrepVal = toPrepValHelper PTI.int8 PE.int8_word64
+
+instance BinaryEncBuiltInTy Int64 where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.int8) PE.int8_int64
+  --toPrepVal = toPrepValHelper PTI.int8 PE.int8_int64
+
+instance BinaryEncBuiltInTy Int32 where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.int4) PE.int4_int32
+  --toPrepVal = toPrepValHelper PTI.int4 PE.int4_int32
+
+instance BinaryEncBuiltInTy Int16 where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.int2) PE.int2_int16
+  --toPrepVal = toPrepValHelper PTI.int2 PE.int2_int16
+
+instance BinaryEncBuiltInTy Float where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.float4) PE.float4
+  --toPrepVal = toPrepValHelper PTI.float4 PE.float4
+
+instance BinaryEncBuiltInTy Double where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.float8) PE.float8
+  --toPrepVal = toPrepValHelper PTI.float8 PE.float8
+
+instance BinaryEncBuiltInTy Scientific where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.numeric) PE.numeric
+  --toPrepVal = toPrepValHelper PTI.numeric PE.numeric
+
+instance BinaryEncBuiltInTy Char where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.text) PE.char_utf8
+  --toPrepVal = toPrepValHelper PTI.text PE.char_utf8
+
+instance BinaryEncBuiltInTy T.Text where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.text) PE.text_strict
+  --toPrepVal = toPrepValHelper PTI.text PE.text_strict
+
+instance BinaryEncBuiltInTy TL.Text where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.text) PE.text_lazy
+  --toPrepVal = toPrepValHelper PTI.text PE.text_lazy
+
+instance BinaryEncBuiltInTy B.ByteString where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.bytea) PE.bytea_strict
+  --toPrepVal = toPrepValHelper PTI.bytea PE.bytea_strict
+
+instance BinaryEncBuiltInTy BL.ByteString where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.bytea) PE.bytea_lazy
+  --toPrepVal = toPrepValHelper PTI.bytea PE.bytea_lazy
+
+instance BinaryEncBuiltInTy LocalTime where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.timestamp) PE.timestamp_int
+  --toPrepVal = toPrepValHelper PTI.timestamp PE.timestamp_int
+
+instance BinaryEncBuiltInTy UTCTime where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.timestamptz) PE.timestamptz_int
+  --toPrepVal = toPrepValHelper PTI.timestamptz PE.timestamptz_int
+
+instance BinaryEncBuiltInTy Bool where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.bool) PE.bool
+  --toPrepVal = toPrepValHelper PTI.bool PE.bool
+
+instance BinaryEncBuiltInTy Day where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.date) PE.date
+  --toPrepVal = toPrepValHelper PTI.date PE.date
 
 newtype JSON  = JSON J.Value deriving (Eq, Show)
 newtype JSONB =  JSONB J.Value deriving (Eq, Show)
 
-instance ToPrepArg JSON where
-  toPrepVal (JSON j) = toPrepValHelper PTI.json PE.json_ast j
+instance BinaryEncBuiltInTy JSON where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.json) $ \(JSON j) -> PE.json_ast j
+  --toPrepVal (JSON j) = toPrepValHelper PTI.json PE.json_ast j
 
-instance ToPrepArg JSONB where
-  toPrepVal (JSONB j) = toPrepValHelper PTI.jsonb PE.jsonb_ast j
+instance BinaryEncBuiltInTy JSONB where
+  btBinaryEncInfo = binEncHelper $(PTI.arrOidsQ PTI.jsonb) $ \(JSONB j) -> PE.jsonb_ast j
+  --toPrepVal (JSONB j) = toPrepValHelper PTI.jsonb PE.jsonb_ast j
 
-instance (ToPrepArg a) => ToPrepArg (Maybe a) where
-  toPrepVal (Just a) = toPrepVal a
-  -- FIX ME, the oid here should be particular to the type
-  toPrepVal Nothing  = (PTI.auto, Nothing)
+--instance (ToPrepArg a) => ToPrepArg (Maybe a) where
+--  toPrepVal (Just a) = toPrepVal a
+--  -- FIX ME, the oid here should be particular to the type
+--  toPrepVal Nothing  = (PTI.auto, Nothing)
 
 instance (ToPrepArg a) => ToPrepArgs [a] where
   toPrepArgs = map toPrepVal
