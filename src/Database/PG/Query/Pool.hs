@@ -15,6 +15,7 @@ module Database.PG.Query.Pool
   , abortTx
   , commitTx
   , runTx
+  , runTx'
   , runTxOnConn
   , catchConnErr
   , sql
@@ -170,6 +171,15 @@ runTx :: (FromPGTxErr e, FromPGConnErr e)
 runTx pool txm tx = do
   res <- liftIO $ runExceptT $
          withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
+  either throwError return res
+
+runTx' :: (FromPGTxErr e, FromPGConnErr e)
+       => PGPool
+       -> TxE e a
+       -> ExceptT e IO a
+runTx' pool tx = do
+  res <- liftIO $ runExceptT $ catchConnErr $
+         RP.withResource pool $ \connRsrc -> execTx connRsrc tx
   either throwError return res
 
 runTxOnConn' :: PGConn
