@@ -65,6 +65,7 @@ data ConnInfo
     , connPassword :: !String
     , connDatabase :: !String
     , connOptions  :: !(Maybe String)
+    , connAppName  :: !String
     , connRetries  :: !Int
     } deriving (Eq, Read, Show)
 
@@ -187,18 +188,20 @@ defaultConnInfo =
            , connPassword = ""
            , connDatabase = ""
            , connOptions = Nothing
+           , connAppName = ""
            , connRetries = 0
            }
 
 pgConnString :: ConnInfo -> DB.ByteString
 pgConnString connInfo = fromString connstr
   where
-    connstr = str "host="     connHost
-            $ num "port="     connPort
-            $ str "user="     connUser
-            $ str "password=" connPassword
-            $ str "dbname="   connDatabase
-            $ mStr "options=" connOptions []
+    connstr = str "host="             connHost
+            $ num "port="             connPort
+            $ str "user="             connUser
+            $ str "password="         connPassword
+            $ str "dbname="           connDatabase
+            $ str "application_name=" connAppName
+            $ mStr "options="         connOptions []
 
     str name field
       | null value = id
@@ -259,8 +262,8 @@ retryOnConnErr pgConn action =
   pgRetrying resetFn retryP logger $ do
     resE <- lift $ runExceptT action
     case resE of
-      Right r -> return $ Right r
-      Left (Left pgIntErr) -> throwError pgIntErr
+      Right r                -> return $ Right r
+      Left (Left pgIntErr)   -> throwError pgIntErr
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
