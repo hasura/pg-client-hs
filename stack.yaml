@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-12.11
+resolver: lts-13.14
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -42,8 +42,8 @@ packages:
 extra-deps:
 
 # for text-builder
-- text-builder-0.6.3
-- deferred-folds-0.9.7
+- text-builder-0.6.5
+- deferred-folds-0.9.10
 - primitive-0.6.4.0
 # for POSIX select(2)
 - select-0.4.0.1

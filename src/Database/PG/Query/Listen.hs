@@ -8,6 +8,7 @@
 module Database.PG.Query.Listen
   ( PGChannel(..)
   , NotifyHandler
+  , PGNotifyEvent(..)
   , listen
   )
 where
@@ -31,7 +32,12 @@ newtype PGChannel
   = PGChannel {getChannelTxt :: T.Text}
   deriving(Show, Eq, IsString)
 
-type NotifyHandler = PQ.Notify -> IO ()
+data PGNotifyEvent
+  = PNEOnStart
+  | PNEPQNotify !PQ.Notify
+  deriving Show
+
+type NotifyHandler = PGNotifyEvent -> IO ()
 
 -- | listen on given channel
 listen
@@ -44,12 +50,15 @@ listen
   => PGPool -> PGChannel -> NotifyHandler -> m ()
 listen pool channel handler = catchConnErr $
   withResource pool $ \pgConn -> do
+    let conn = pgPQConn pgConn
+
     -- Issue listen command
     eRes <- liftIO $ runExceptT $
             execMulti pgConn (mkTemplate listenCmd) $ const $ return ()
     either throwTxErr return eRes
+    -- Emit onStart event
+    liftIO $ handler PNEOnStart
     forever $ do
-      let conn = pgPQConn pgConn
       -- Make postgres connection ready for reading
       r <- liftIO $ runExceptT $ waitForReadReadiness conn
       either (throwError . fromPGConnErr) return r
@@ -68,8 +77,8 @@ listen pool channel handler = catchConnErr $
       -- Collect notification
       mNotify <- PQ.notifies conn
       onJust mNotify $ \n -> do
-        -- Apply handler on arrived notification
-        handler n
+        -- Apply notify handler on arrived notification
+        handler $ PNEPQNotify n
         -- Process remaining notifications if any
         processNotifs conn
 

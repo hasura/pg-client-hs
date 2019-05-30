@@ -9,6 +9,7 @@ module Database.PG.Query
 import           Database.PG.Query.Class
 import           Database.PG.Query.Connection  (ConnInfo (..), ConnOptions (..),
                                                 PGConn (..), PGConnErr (..),
+                                                PGLogEvent (..), PGLogger,
                                                 PrepArg, ResultOk (..),
                                                 Template)
 import           Database.PG.Query.Listen
