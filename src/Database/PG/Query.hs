@@ -10,7 +10,8 @@ import           Database.PG.Query.Class
 import           Database.PG.Query.Connection  (ConnInfo (..), PGConn (..),
                                                 PGConnErr (..), PGLogEvent (..),
                                                 PGLogger, PrepArg,
-                                                ResultOk (..), Template)
+                                                ResultOk (..), Template,
+                                                pgConnString)
 import           Database.PG.Query.Listen
 import           Database.PG.Query.Pool
 import           Database.PG.Query.Transaction
