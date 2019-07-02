@@ -17,16 +17,15 @@ import           Database.PG.Query.Connection
 import           Database.PG.Query.Pool
 import           Database.PG.Query.Transaction
 
+import           Control.Exception             (displayException, try)
 import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Pool                     (withResource)
 import           Data.String
+import           GHC.Conc.IO                   (threadWaitRead)
 
 import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
-import qualified System.Posix.IO.Select        as PS
-import qualified System.Posix.IO.Select.FdSet  as PS
-import qualified System.Posix.IO.Select.Types  as PS
 
 newtype PGChannel
   = PGChannel {getChannelTxt :: T.Text}
@@ -86,20 +85,13 @@ waitForReadReadiness :: PQ.Connection -> ExceptT PGConnErr IO ()
 waitForReadReadiness conn = do
   -- Get file descriptor of underlying socket of a connection
   mFd <- lift $ PQ.socket conn
-  onJust mFd withFd
+  fd <- maybe (throwError $ PGConnErr "connection is not currently open") pure mFd
+  -- Wait for the socket to be ready for reading
+  waitResult <- lift . try $ threadWaitRead fd
+  either (throwError . ioErrorToPGConnErr) return waitResult
   where
-    -- Perform select(2) operation on file descriptor
-    -- to check whether it is ready for reading
-    withFd fd = do
-      selRes <- lift $ do
-        -- Make file descriptors set
-        r <- PS.fromList [fd] --read
-        w <- PS.empty -- write
-        e <- PS.empty -- exception
-        PS.select r w e PS.Never
-      case selRes of
-        PS.Error -> throwError $ PGConnErr "select() failed"
-        _        -> return ()
+    ioErrorToPGConnErr :: IOError -> PGConnErr
+    ioErrorToPGConnErr = PGConnErr . T.pack . displayException
 
 onJust :: Monad m => Maybe a -> (a -> m ()) -> m ()
 onJust Nothing _    = return ()

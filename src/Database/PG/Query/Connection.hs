@@ -9,6 +9,7 @@ module Database.PG.Query.Connection
     ( initPQConn
     , defaultConnInfo
     , ConnInfo(..)
+    , pgConnString
     , PGQuery(..)
     , PGRetryPolicy
     , mkPGRetryPolicy
@@ -190,7 +191,7 @@ defaultConnInfo =
            , connRetries = 0
            }
 
-pgConnString :: ConnInfo -> DB.ByteString
+pgConnString :: IsString a => ConnInfo -> a
 pgConnString connInfo = fromString connstr
   where
     connstr = str "host="     connHost
@@ -259,8 +260,8 @@ retryOnConnErr pgConn action =
   pgRetrying resetFn retryP logger $ do
     resE <- lift $ runExceptT action
     case resE of
-      Right r -> return $ Right r
-      Left (Left pgIntErr) -> throwError pgIntErr
+      Right r                -> return $ Right r
+      Left (Left pgIntErr)   -> throwError pgIntErr
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
