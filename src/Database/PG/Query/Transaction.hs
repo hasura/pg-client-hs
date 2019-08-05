@@ -83,7 +83,7 @@ catchE f action = TxE $ mapReaderT (withExceptT f) $ txHandler action
 
 data PGTxErr
   = PGTxErr !T.Text ![PrepArg] !Bool !PGErrInternal
-  -- | PGCustomErr !T.Text
+  -- PGCustomErr !T.Text
   deriving (Eq)
 
 {-# INLINE getPGStmtErr #-}

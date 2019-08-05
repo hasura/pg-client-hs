@@ -11,6 +11,7 @@ module Database.PG.Query.Connection
     , ConnInfo(..)
     , ConnOptions(..)
     , getRetries
+    , pgConnString
     , PGQuery(..)
     , PGRetryPolicy
     , mkPGRetryPolicy
@@ -271,8 +272,8 @@ retryOnConnErr pgConn action =
   pgRetrying resetFn retryP logger $ do
     resE <- lift $ runExceptT action
     case resE of
-      Right r -> return $ Right r
-      Left (Left pgIntErr) -> throwError pgIntErr
+      Right r                -> return $ Right r
+      Left (Left pgIntErr)   -> throwError pgIntErr
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
