@@ -9,8 +9,8 @@ module Database.PG.Query.Connection
     ( initPQConn
     , defaultConnInfo
     , ConnInfo(..)
+    , ConnDetails(..)
     , ConnOptions(..)
-    , getRetries
     , pgConnString
     , PGQuery(..)
     , PGRetryPolicy
@@ -68,17 +68,18 @@ data ConnOptions
     , connPassword :: !String
     , connDatabase :: !String
     , connOptions  :: !(Maybe String)
-    , connRetries  :: !Int
     } deriving (Eq, Read, Show)
 
-data ConnInfo
-  = CIDatabaseURI !Int !DB.ByteString
-  | CIOptions !ConnOptions
+data ConnDetails
+  = CDDatabaseURI !DB.ByteString
+  | CDOptions !ConnOptions
   deriving (Show, Read, Eq)
 
-getRetries :: ConnInfo -> Int
-getRetries (CIDatabaseURI i _) = i
-getRetries (CIOptions opts)    = connRetries opts
+data ConnInfo
+  = ConnInfo
+  { ciRetries :: !Int
+  , ciDetails :: !ConnDetails
+  } deriving (Show, Read, Eq)
 
 newtype PGConnErr = PGConnErr { getConnErr :: DT.Text }
   deriving (Show, Eq, ToJSON)
@@ -146,7 +147,7 @@ initPQConn ci logger =
   pgRetrying resetFn retryP logger $ do
 
     -- Initialise the connection
-    conn <- PQ.connectdb (pgConnString ci)
+    conn <- PQ.connectdb (pgConnString $ ciDetails ci)
 
     -- Check the status of the connection
     s <- liftIO $ PQ.status conn
@@ -154,7 +155,7 @@ initPQConn ci logger =
     bool (whenConnNotOk conn) (whenConnOk conn) connOk
   where
     resetFn = return ()
-    retryP = mkPGRetryPolicy $ getRetries ci
+    retryP = mkPGRetryPolicy $ ciRetries ci
 
     whenConnNotOk conn = do
       m <- PQ.errorMessage conn
@@ -192,19 +193,20 @@ toByteString :: BB.Builder -> DB.ByteString
 toByteString = BL.toStrict . BB.toLazyByteString
 
 defaultConnInfo :: ConnInfo
-defaultConnInfo = CIOptions
-  ConnOptions { connHost = "127.0.0.1"
+defaultConnInfo = ConnInfo 0 details
+  where
+    details = CDOptions ConnOptions
+              { connHost = "127.0.0.1"
               , connPort = 5432
               , connUser = "postgres"
               , connPassword = ""
               , connDatabase = ""
               , connOptions = Nothing
-              , connRetries = 0
               }
 
-pgConnString :: ConnInfo -> DB.ByteString
-pgConnString (CIDatabaseURI _ uri) = uri
-pgConnString (CIOptions opts)      = fromString connstr
+pgConnString :: ConnDetails -> DB.ByteString
+pgConnString (CDDatabaseURI uri) = uri
+pgConnString (CDOptions opts)    = fromString connstr
   where
     connstr = str "host="     connHost
             $ num "port="     connPort

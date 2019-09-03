@@ -65,7 +65,7 @@ initPGPool ci cp logger =
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
-    retryP = mkPGRetryPolicy $ getRetries ci
+    retryP = mkPGRetryPolicy $ ciRetries ci
     creator   = do
       pqConn  <- initPQConn ci logger
       ctr     <- newIORef 0
