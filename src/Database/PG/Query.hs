@@ -7,7 +7,8 @@ module Database.PG.Query
     ) where
 
 import           Database.PG.Query.Class
-import           Database.PG.Query.Connection  (ConnInfo (..), PGConn (..),
+import           Database.PG.Query.Connection  (ConnDetails (..), ConnInfo (..),
+                                                ConnOptions (..), PGConn (..),
                                                 PGConnErr (..), PGLogEvent (..),
                                                 PGLogger, PrepArg,
                                                 ResultOk (..), Template,
