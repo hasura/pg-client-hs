@@ -41,6 +41,7 @@ import           Control.Monad.Except
 import           Control.Monad.Reader
 import           Data.Aeson
 import           Data.Aeson.Text
+import           Data.Hashable
 import           GHC.Exts
 
 import qualified Data.Text                    as T
@@ -109,7 +110,7 @@ execTx conn tx = runReaderT (txHandler tx) conn
 
 newtype Query
   = Query { getQueryText :: T.Text }
-  deriving (Show, Eq, IsString)
+  deriving (Show, Eq, Hashable, IsString, ToJSON)
 
 {-# INLINE fromText #-}
 fromText :: T.Text -> Query
