@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveLift                 #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE FlexibleInstances          #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -43,6 +44,7 @@ import           Data.Aeson
 import           Data.Aeson.Text
 import           Data.Hashable
 import           GHC.Exts
+import           Language.Haskell.TH.Syntax   (Lift)
 
 import qualified Data.Text                    as T
 import qualified Database.PostgreSQL.LibPQ    as PQ
@@ -52,7 +54,7 @@ data TxIsolation
   = ReadCommitted
   | RepeatableRead
   | Serializable
-  deriving (Eq)
+  deriving (Eq, Lift)
 
 instance Show TxIsolation where
   {-# INLINE show #-}
@@ -63,7 +65,7 @@ instance Show TxIsolation where
 data TxAccess
   = ReadWrite
   | ReadOnly
-  deriving (Eq)
+  deriving (Eq, Lift)
 
 instance Show TxAccess where
   {-# INLINE show #-}
