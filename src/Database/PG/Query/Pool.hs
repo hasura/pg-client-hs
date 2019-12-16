@@ -6,11 +6,15 @@
 module Database.PG.Query.Pool
   ( ConnParams (..)
   , PGPool
+  , LocalPGPool
   , defaultConnParams
   , initPGPool
+  , getPGConnMaybe
+  , returnPGConnToPool
   , destroyPGPool
   , withConn
   , runTxOnConn'
+  , runTxWithConn
   , beginTx
   , abortTx
   , commitTx
@@ -43,6 +47,7 @@ import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
 
 type PGPool = RP.Pool PGConn
+type LocalPGPool = RP.LocalPool PGConn
 
 data ConnParams
   = ConnParams
@@ -78,6 +83,12 @@ initPGPool ci cp logger =
 -- Release all connections acquired by the pool.
 destroyPGPool :: PGPool -> IO ()
 destroyPGPool = RP.destroyAllResources
+
+getPGConnMaybe :: PGPool -> IO (Maybe (PGConn, LocalPGPool))
+getPGConnMaybe = RP.tryTakeResource
+
+returnPGConnToPool :: LocalPGPool -> PGConn -> IO ()
+returnPGConnToPool = RP.putResource
 
 data PGExecErr
   = PGExecErrConn !PGConnErr
@@ -180,6 +191,14 @@ runTx' :: (FromPGTxErr e, FromPGConnErr e)
 runTx' pool tx = do
   res <- liftIO $ runExceptT $ catchConnErr $
          RP.withResource pool $ \connRsrc -> execTx connRsrc tx
+  either throwError return res
+
+runTxWithConn :: (FromPGTxErr e, FromPGConnErr e)
+              => PGConn
+              -> TxE e a
+              -> ExceptT e IO a
+runTxWithConn conn tx = do
+  res <- liftIO $ runExceptT $ catchConnErr $ execTx conn tx
   either throwError return res
 
 runTxOnConn' :: PGConn
