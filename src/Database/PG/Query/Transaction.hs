@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 module Database.PG.Query.Transaction
     ( TxIsolation(..)
@@ -38,8 +39,10 @@ module Database.PG.Query.Transaction
 import           Database.PG.Query.Class
 import           Database.PG.Query.Connection
 
+import           Control.Monad.Base
 import           Control.Monad.Except
 import           Control.Monad.Reader
+import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.Aeson.Text
 import           Data.Hashable
@@ -78,7 +81,8 @@ type Tx = TxE PGTxErr
 
 newtype TxE e a
   = TxE { txHandler :: ReaderT PGConn (ExceptT e IO) a }
-  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
+  deriving ( Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn
+           , MonadBase IO, MonadBaseControl IO )
 
 {-# INLINE catchE #-}
 catchE :: (e -> e') -> TxE e a -> TxE e' a
