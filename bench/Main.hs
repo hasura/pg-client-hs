@@ -72,7 +72,7 @@ getPoolC = do
                  , Q.connUser = "admin"
                  , Q.connDatabase = "chinook"
                  }
-      connParams = Q.ConnParams 1 1 180
+      connParams = Q.ConnParams 1 1 180 Nothing
   Q.initPGPool connInfo connParams
 
 q1 :: T.Text

@@ -20,7 +20,6 @@ import           Database.PG.Query.Transaction
 import           Control.Exception             (displayException, try)
 import           Control.Monad.Except
 import           Control.Monad.Trans.Control
-import           Data.Pool                     (withResource)
 import           Data.String
 import           GHC.Conc.IO                   (threadWaitRead)
 
@@ -48,7 +47,7 @@ listen
      )
   => PGPool -> PGChannel -> NotifyHandler -> m ()
 listen pool channel handler = catchConnErr $
-  withResource pool $ \pgConn -> do
+  withExpiringPGconn pool $ \pgConn -> do
     let conn = pgPQConn pgConn
 
     -- Issue listen command
