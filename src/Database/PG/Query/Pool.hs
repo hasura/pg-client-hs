@@ -1,11 +1,13 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
   ( ConnParams (..)
   , PGPool
+  , withExpiringPGconn
   , defaultConnParams
   , initPGPool
   , destroyPGPool
@@ -23,6 +25,8 @@ module Database.PG.Query.Pool
   , PGExecErr(..)
   , FromPGConnErr(..)
   , FromPGTxErr(..)
+  -- * Forcing destroying of connections
+  , PGConnectionStale(..)
   ) where
 
 import           Database.PG.Query.Connection
@@ -33,6 +37,7 @@ import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.IORef
+import           Data.Time
 import           GHC.Exts                      (fromString)
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
@@ -49,12 +54,15 @@ data ConnParams
     { cpStripes      :: !Int
     , cpConns        :: !Int
     , cpIdleTime     :: !Int
+    -- ^ Connections that sit idle for longer than cpIdleTime may be destroyed.
     , cpAllowPrepare :: !Bool
+    , cpMbLifetime   :: !(Maybe NominalDiffTime)
+    -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
     }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
-defaultConnParams = ConnParams 1 20 60 True
+defaultConnParams = ConnParams 1 20 60 True Nothing
 
 initPGPool :: ConnInfo
            -> ConnParams
@@ -67,10 +75,11 @@ initPGPool ci cp logger =
     nConns    = cpConns cp
     retryP = mkPGRetryPolicy $ ciRetries ci
     creator   = do
+      createdAt <- getCurrentTime
       pqConn  <- initPQConn ci logger
       ctr     <- newIORef 0
       table   <- HI.new
-      return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table
+      return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
     diffTime  = fromIntegral $ cpIdleTime cp
 
@@ -145,7 +154,7 @@ withConn :: (FromPGTxErr e, FromPGConnErr e)
 withConn pool txm f =
   catchConnErr action
   where
-    action  = RP.withResource pool $
+    action  = withExpiringPGconn pool $
              \connRsrc -> runTxOnConn connRsrc txm f
 
 catchConnErr :: (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
@@ -179,7 +188,7 @@ runTx' :: (FromPGTxErr e, FromPGConnErr e)
        -> ExceptT e IO a
 runTx' pool tx = do
   res <- liftIO $ runExceptT $ catchConnErr $
-         RP.withResource pool $ \connRsrc -> execTx connRsrc tx
+         withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
   either throwError return res
 
 runTxOnConn' :: PGConn
@@ -194,3 +203,41 @@ sqlFromFile :: FilePath -> Q Exp
 sqlFromFile fp = do
   contents <- qAddDependentFile fp >> runIO (readFile fp)
   [| fromString contents |]
+
+
+-- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
+-- optionally expiring the connection after a configurable amount of time so
+-- that memory at least can't accumulate unbounded in long-lived connections.
+--
+-- See ticket for discussion of more long-term solutions.
+--
+-- Note that idle connections that aren't actively expired here will be
+-- destroyed per the timeout policy in Data.Pool.
+withExpiringPGconn 
+  :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m a
+withExpiringPGconn pool f = do
+  -- If the connection was stale, we'll discard it and retry, possibly forcing
+  -- creation of new connection:
+  handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
+    RP.withResource pool $ \connRsrc@PGConn{pgCreatedAt, pgMbLifetime} -> do
+      now <- liftIO $ getCurrentTime
+      let connectionStale = 
+            maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
+      when connectionStale $ do
+        -- Throwing is the only way to signal to resource pool to discard the
+        -- connection at this time, so we need to use it for control flow:
+        throw PGConnectionStale
+      -- else proceed with callback:
+      f connRsrc
+
+-- | Used internally (see 'withExpiringPGconn'), but exported in case we need
+-- to allow callback to signal that the connection should be destroyed and we
+-- should retry.
+data PGConnectionStale = PGConnectionStale
+  deriving Show
+
+instance Exception PGConnectionStale
+
+-- cribbed from lifted-base
+handleLifted :: (MonadBaseControl IO m, Exception e) => (e -> m a) -> m a -> m a
+handleLifted handler ma = control $ \runInIO -> handle (runInIO . handler) (runInIO ma)

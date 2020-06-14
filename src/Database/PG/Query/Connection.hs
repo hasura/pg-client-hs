@@ -46,6 +46,7 @@ import           Data.Bool
 import           Data.Hashable
 import           Data.IORef
 import           Data.Maybe
+import           Data.Time
 import           Data.Word
 import           GHC.Exts
 import           GHC.Generics
@@ -279,7 +280,7 @@ retryOnConnErr pgConn action =
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
-    PGConn _ _ retryP logger _ _ = pgConn
+    PGConn _ _ retryP logger _ _ _ _ = pgConn
 
 checkResult
   :: PQ.Connection
@@ -401,10 +402,13 @@ data PGConn
   , pgLogger       :: !PGLogger
   , pgCounter      :: !(IORef Word16)
   , pgTable        :: !RKLookupTable
+  , pgCreatedAt   :: !UTCTime
+  , pgMbLifetime   :: !(Maybe NominalDiffTime)
+  -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
   }
 
 resetPGConn :: PGConn -> IO ()
-resetPGConn (PGConn conn _ _ _ ctr ht) = do
+resetPGConn (PGConn conn _ _ _ ctr ht _ _) = do
   -- Reset LibPQ connection
   PQ.reset conn
   -- Set counter to 0
@@ -449,7 +453,7 @@ prepare
   -> Template
   -> [PQ.Oid]
   -> PGExec RemoteKey
-prepare (PGConn conn _ _ _ counter table) t tl = do
+prepare (PGConn conn _ _ _ counter table _ _) t tl = do
   let lk      = localKey t tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
@@ -498,7 +502,7 @@ execQuery pgConn pgQuery = do
     bool withoutPrepare withPrepare $ allowPrepare && preparable
   withExceptT PGIUnexpected $ convF resOk
   where
-    PGConn conn allowPrepare _ _ _ _ = pgConn
+    PGConn conn allowPrepare _ _ _ _ _ _ = pgConn
     PGQuery t params preparable convF = pgQuery
     withoutPrepare = execParams conn t params
     withPrepare = do
