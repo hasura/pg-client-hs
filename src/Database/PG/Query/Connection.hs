@@ -177,8 +177,6 @@ initPQConn ci logger =
       mRes <- PQ.exec conn $ toByteString $ mconcat
               [ BB.string7 "SET client_encoding = 'UTF8';"
               , BB.string7 "SET client_min_messages TO WARNING;"
-              -- To avoid loss of precision in PostgreSQL 11 and older
-              , BB.string7 "SET extra_float_digits = 3;"
               ]
       case mRes of
         Just res -> do
