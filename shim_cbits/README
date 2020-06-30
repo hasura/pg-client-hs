@@ -1,0 +1,9 @@
+These are just so we don't get errors when we include <internal/libpq-int.h>.
+It seems like that file isn't structured properly, in any case these missing
+header files are from the server dev headers (on debian
+'postgresql-server-dev-*') and we could depend on that package and pass to gcc:
+
+     -I$(pg_config --includedir-server)  ...
+
+But using these fake header files seems actually safer since we know their
+internals don't matter.
