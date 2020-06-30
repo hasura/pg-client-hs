@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
@@ -31,6 +31,7 @@ module Database.PG.Query.Pool
 
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
+import           Database.PG.ExtraBindings
 
 import           Control.Exception
 import           Control.Monad.Except
@@ -219,7 +220,7 @@ withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
-    RP.withResource pool $ \connRsrc@PGConn{pgCreatedAt, pgMbLifetime} -> do
+    RP.withResource pool $ \connRsrc@PGConn{..} -> do
       now <- liftIO $ getCurrentTime
       let connectionStale = 
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
@@ -229,6 +230,8 @@ withExpiringPGconn pool f = do
         throw PGConnectionStale
       -- else proceed with callback:
       f connRsrc
+        -- Clean up the connection buffers to prevent memory bloat (See #5087):
+        <* liftIO (unsafeClampInOutBufferSpace pgPQConn)
 
 -- | Used internally (see 'withExpiringPGconn'), but exported in case we need
 -- to allow callback to signal that the connection should be destroyed and we
