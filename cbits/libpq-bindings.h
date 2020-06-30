@@ -1,3 +1,4 @@
+#include <internal/postgres_fe.h>
 #include <stdio.h>
 #include "libpq-fe.h"
 
