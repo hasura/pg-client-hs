@@ -1,10 +1,9 @@
 #include <stdlib.h> 
 #include <unistd.h> 
 #include <stdio.h> 
-#include <libpq-fe.h>
+#include <libpq-bindings.h>
 /* internals for PGconn struct: */
 #include <internal/libpq-int.h>
-#include <libpq-bindings.h>
 
 #define ONE_MEGABYTE (1024*1024)
 
