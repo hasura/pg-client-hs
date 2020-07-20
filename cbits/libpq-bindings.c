@@ -53,7 +53,7 @@ void PQclampInOutBufferSpace(PGconn *conn) {
      * committing a transaction, but is included for sanity. It's not clear if
      * this function is safe to call in other situation.
      */
-    if (conn->inStart == conn->inEnd && conn->inBufSize > maxSize * 2) {
+    if (conn->inBuffer && conn->inStart == conn->inEnd && conn->inBufSize > maxSize * 2) {
         /* NOTE: Operationally we think we want to shrink this buffer and free
          * pages from the tail (of what is, at this size, likely mmapped memory)
          * and so realloc() is tempting. But realloc might actually copy, even when
@@ -75,7 +75,7 @@ void PQclampInOutBufferSpace(PGconn *conn) {
      *
      * Just as above, but for the request buffer.
      */
-    if (conn->outCount == 0 && conn->outBufSize > maxSize * 2) {
+    if (conn->outBuffer && conn->outCount == 0 && conn->outBufSize > maxSize * 2) {
         free(conn->outBuffer);
         conn->outBuffer = malloc(maxSize);
         conn->outBufSize = maxSize;
