@@ -1,15 +1,17 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
   ( ConnParams (..)
   , PGPool
+  , PGPoolResource (..)
   , withExpiringPGconn
   , defaultConnParams
   , initPGPool
+  , initPGPoolResource
   , destroyPGPool
   , withConn
   , runTxOnConn'
@@ -29,14 +31,15 @@ module Database.PG.Query.Pool
   , PGConnectionStale(..)
   ) where
 
+import           Database.PG.ExtraBindings
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
-import           Database.PG.ExtraBindings
 
 import           Control.Exception
 import           Control.Monad.Except
 import           Control.Monad.Trans.Control
 import           Data.Aeson
+import           Data.Int                      (Int64)
 import           Data.IORef
 import           Data.Time
 import           GHC.Exts                      (fromString)
@@ -49,6 +52,14 @@ import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
 
 type PGPool = RP.Pool PGConn
+
+-- | A type with 'PGPool' and some metrics related to the pool
+data PGPoolResource
+  = PGPoolResource
+  { pgResourcePool                :: !PGPool
+  , pgGetTotalConnections         :: !(IO Int64)
+  , pgPreparedStatementsCacheSize :: !(IO Int64)
+  }
 
 data ConnParams
   = ConnParams
@@ -65,23 +76,45 @@ data ConnParams
 defaultConnParams :: ConnParams
 defaultConnParams = ConnParams 1 20 60 True Nothing
 
+data ConnectionHooks
+  = ConnectionHooks
+  { connectionHookPostCreate  :: PGConn -> IO ()
+    -- ^ post connection init hook
+  , connectionHookPostDestroy :: PGConn -> IO ()
+    -- ^ post connection destroy hook
+  }
+
+initPGPoolResource
+  :: ConnInfo -> ConnParams -> PGLogger -> IO PGPoolResource
+initPGPoolResource ci cp logger = do
+  totalConnections <- newIORef 0
+  let increment = const $ modifyIORef' totalConnections (+1)
+      decrement = const $ modifyIORef' totalConnections (\c -> max 0 (c - 1))
+      hooks = ConnectionHooks increment decrement
+  pool <- initPGPool ci cp logger hooks
+  return $ PGPoolResource pool (readIORef totalConnections) (return 42)
+
 initPGPool :: ConnInfo
            -> ConnParams
            -> PGLogger
+           -> ConnectionHooks
            -> IO PGPool
-initPGPool ci cp logger =
+initPGPool ci cp logger ConnectionHooks{..} = do
   RP.createPool creator destroyer nStripes diffTime nConns
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
-    retryP = mkPGRetryPolicy $ ciRetries ci
+    retryP    = mkPGRetryPolicy $ ciRetries ci
     creator   = do
       createdAt <- getCurrentTime
       pqConn  <- initPQConn ci logger
       ctr     <- newIORef 0
       table   <- HI.new
-      return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
-    destroyer = PQ.finish . pgPQConn
+      -- run the post hook. Is the return type () sensible?
+      let pgConn = PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
+      connectionHookPostCreate pgConn
+      return pgConn
+    destroyer conn = PQ.finish (pgPQConn conn) >> connectionHookPostDestroy conn
     diffTime  = fromIntegral $ cpIdleTime cp
 
 -- |
@@ -214,7 +247,7 @@ sqlFromFile fp = do
 --
 -- Note that idle connections that aren't actively expired here will be
 -- destroyed per the timeout policy in Data.Pool.
-withExpiringPGconn 
+withExpiringPGconn
   :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m a
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
@@ -222,7 +255,7 @@ withExpiringPGconn pool f = do
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
     RP.withResource pool $ \connRsrc@PGConn{..} -> do
       now <- liftIO $ getCurrentTime
-      let connectionStale = 
+      let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
         -- Throwing is the only way to signal to resource pool to discard the
