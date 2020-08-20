@@ -53,12 +53,17 @@ import qualified Database.PostgreSQL.LibPQ     as PQ
 
 type PGPool = RP.Pool PGConn
 
--- | A type with 'PGPool' and some metrics related to the pool
+-- | A type with 'PGPool' and some metrics related to the pool. The
+-- resource-pool package doesn't provide any primitives to get any details about
+-- all the resources in the pool, or even a function that can fold or collect
+-- over all resources in the pool (which makes sense because that might mean
+-- acquiring all the resources in the pool at once). Hence we introduce a new
+-- type with the 'PGPool' and functions which can return relevant metrics or
+-- statistics regarding the pool.
 data PGPoolResource
   = PGPoolResource
-  { pgResourcePool                :: !PGPool
-  , pgGetTotalConnections         :: !(IO Int64)
-  , pgPreparedStatementsCacheSize :: !(IO Int64)
+  { pgResourcePool        :: !PGPool
+  , pgGetTotalConnections :: !(IO Int64)
   }
 
 data ConnParams
@@ -79,20 +84,22 @@ defaultConnParams = ConnParams 1 20 60 True Nothing
 data ConnectionHooks
   = ConnectionHooks
   { connectionHookPostCreate  :: PGConn -> IO ()
-    -- ^ post connection init hook
+    -- ^ post connection init hook. Is the return type () sensible?
   , connectionHookPostDestroy :: PGConn -> IO ()
     -- ^ post connection destroy hook
   }
 
+-- | This function will create a 'PGPool' and create relevant functions which
+-- can compute metrics/stats related to the pool.
 initPGPoolResource
   :: ConnInfo -> ConnParams -> PGLogger -> IO PGPoolResource
 initPGPoolResource ci cp logger = do
   totalConnections <- newIORef 0
-  let increment = const $ modifyIORef' totalConnections (+1)
-      decrement = const $ modifyIORef' totalConnections (\c -> max 0 (c - 1))
+  let increment = const $ atomicModifyIORef' totalConnections (\c -> (c + 1, ()))
+      decrement = const $ atomicModifyIORef' totalConnections (\c -> (max 0 (c - 1), ()))
       hooks = ConnectionHooks increment decrement
   pool <- initPGPool ci cp logger hooks
-  return $ PGPoolResource pool (readIORef totalConnections) (return 42)
+  return $ PGPoolResource pool (readIORef totalConnections)
 
 initPGPool :: ConnInfo
            -> ConnParams
@@ -110,7 +117,6 @@ initPGPool ci cp logger ConnectionHooks{..} = do
       pqConn  <- initPQConn ci logger
       ctr     <- newIORef 0
       table   <- HI.new
-      -- run the post hook. Is the return type () sensible?
       let pgConn = PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
       connectionHookPostCreate pgConn
       return pgConn
