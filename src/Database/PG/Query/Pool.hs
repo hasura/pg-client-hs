@@ -84,7 +84,7 @@ defaultConnParams = ConnParams 1 20 60 True Nothing
 data ConnectionHooks
   = ConnectionHooks
   { connectionHookPostCreate  :: PGConn -> IO ()
-    -- ^ post connection init hook. Is the return type () sensible?
+    -- ^ post connection init hook
   , connectionHookPostDestroy :: PGConn -> IO ()
     -- ^ post connection destroy hook
   }
