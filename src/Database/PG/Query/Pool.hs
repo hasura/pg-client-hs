@@ -7,6 +7,7 @@
 module Database.PG.Query.Pool
   ( ConnParams (..)
   , PGPool
+  , getInUseConnections
   , withExpiringPGconn
   , defaultConnParams
   , initPGPool
@@ -49,6 +50,9 @@ import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
 
 type PGPool = RP.Pool PGConn
+
+getInUseConnections :: PGPool -> IO Int
+getInUseConnections = RP.getInUseResourceCount
 
 data ConnParams
   = ConnParams
@@ -214,7 +218,7 @@ sqlFromFile fp = do
 --
 -- Note that idle connections that aren't actively expired here will be
 -- destroyed per the timeout policy in Data.Pool.
-withExpiringPGconn 
+withExpiringPGconn
   :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m a
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
@@ -222,7 +226,7 @@ withExpiringPGconn pool f = do
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
     RP.withResource pool $ \connRsrc@PGConn{..} -> do
       now <- liftIO $ getCurrentTime
-      let connectionStale = 
+      let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
         -- Throwing is the only way to signal to resource pool to discard the
