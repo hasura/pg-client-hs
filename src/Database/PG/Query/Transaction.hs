@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Database.PG.Query.Transaction
@@ -43,9 +44,9 @@ import           Database.PG.Query.Connection
 
 import           Control.Monad.Base
 import           Control.Monad.Except
-import           Control.Monad.Morph          (hoist)
+import           Control.Monad.Morph          (MFunctor, hoist)
 import           Control.Monad.Reader
--- import           Control.Monad.Trans.Control
+import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.Aeson.Text
 import           Data.Hashable
@@ -82,14 +83,21 @@ type TxMode = (TxIsolation, Maybe TxAccess)
 
 newtype TxET e m a
   = TxET { txHandler :: ReaderT PGConn (ExceptT e m) a }
-  deriving ( Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
-           -- , MonadBase IO, MonadBaseControl IO )
+  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
 
 instance MonadTrans (TxET e) where
   lift = TxET . lift . lift
 
+instance MFunctor (TxET e) where
+  hoist f = TxET . hoist (hoist f) . txHandler
+
 instance (MonadBase IO m) => MonadBase IO (TxET e m) where
   liftBase = lift . liftBase
+
+instance (MonadBaseControl IO m) => MonadBaseControl IO (TxET e m) where
+  type StM (TxET e m) a = StM (ReaderT PGConn (ExceptT e m)) a
+  liftBaseWith f = TxET $ liftBaseWith $ \run -> f (run . txHandler)
+  restoreM = TxET . restoreM
 
 type TxE e a = TxET e IO a
 type TxT m a = TxET PGTxErr m a
