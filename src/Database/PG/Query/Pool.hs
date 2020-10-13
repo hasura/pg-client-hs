@@ -1,7 +1,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TemplateHaskell   #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
@@ -30,9 +30,9 @@ module Database.PG.Query.Pool
   , PGConnectionStale(..)
   ) where
 
+import           Database.PG.ExtraBindings
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
-import           Database.PG.ExtraBindings
 
 import           Control.Exception
 import           Control.Monad.Except
@@ -112,18 +112,18 @@ instance Show PGExecErr where
   show (PGExecErrConn pce) = show pce
   show (PGExecErrTx txe)   = show txe
 
-beginTx :: TxMode -> Tx ()
+beginTx :: (MonadIO m) => TxMode -> TxT m ()
 beginTx (i, w) =
   unitQ query () True
   where
     query = fromText $ T.pack
       ("BEGIN " <> show i <> " " <> maybe "" show w)
 
-commitTx :: Tx ()
+commitTx :: (MonadIO m) => TxT m ()
 commitTx =
   unitQ "COMMIT" () True
 
-abortTx :: Tx ()
+abortTx :: (MonadIO m) => TxT m ()
 abortTx =
   unitQ "ABORT" () True
 
@@ -133,11 +133,11 @@ class FromPGTxErr e where
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
-runTxOnConn :: (FromPGTxErr e)
+runTxOnConn :: (MonadIO m, FromPGTxErr e)
             => PGConn
             -> TxMode
-            -> (PGConn -> ExceptT e IO a)
-            -> ExceptT e IO a
+            -> (PGConn -> ExceptT e m a)
+            -> ExceptT e m a
 runTxOnConn pgConn txm f = do
   -- Begin the transaction. If there is an error, you shouldn't call abort
   withExceptT fromPGTxErr $ execTx pgConn $ beginTx txm
@@ -151,11 +151,15 @@ runTxOnConn pgConn txm f = do
       withExceptT fromPGTxErr $ execTx pgConn abortTx
       throwError e
 
-withConn :: (FromPGTxErr e, FromPGConnErr e)
+withConn :: ( MonadIO m
+            , MonadBaseControl IO m
+            , FromPGTxErr e
+            , FromPGConnErr e
+            )
          => PGPool
          -> TxMode
-         -> (PGConn -> ExceptT e IO a)
-         -> ExceptT e IO a
+         -> (PGConn -> ExceptT e m a)
+         -> ExceptT e m a
 withConn pool txm f =
   catchConnErr action
   where
@@ -177,28 +181,33 @@ mkConnExHandler :: (MonadError e m)
                 -> (PGConnErr -> m a)
 mkConnExHandler _ ef = throwError . ef
 
-runTx :: (FromPGTxErr e, FromPGConnErr e)
+runTx :: ( MonadIO m
+         , MonadBaseControl IO m
+         , FromPGTxErr e
+         , FromPGConnErr e
+         )
       => PGPool
       -> TxMode
-      -> TxE e a
-      -> ExceptT e IO a
+      -> TxET e m a
+      -> ExceptT e m a
 runTx pool txm tx = do
-  res <- liftIO $ runExceptT $
-         withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
-  either throwError return res
+  withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
 
-runTx' :: (FromPGTxErr e, FromPGConnErr e)
+runTx' :: ( MonadIO m
+          , MonadBaseControl IO m
+          , FromPGTxErr e
+          , FromPGConnErr e
+          )
        => PGPool
-       -> TxE e a
-       -> ExceptT e IO a
+       -> TxET e m a
+       -> ExceptT e m a
 runTx' pool tx = do
-  res <- liftIO $ runExceptT $ catchConnErr $
-         withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
-  either throwError return res
+  catchConnErr $
+    withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
 
 runTxOnConn' :: PGConn
-             -> TxE e a
-             -> ExceptT e IO a
+             -> TxET e m a
+             -> ExceptT e m a
 runTxOnConn' = execTx
 
 sql :: QuasiQuoter
@@ -225,7 +234,7 @@ withExpiringPGconn pool f = do
   -- creation of new connection:
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
     RP.withResource pool $ \connRsrc@PGConn{..} -> do
-      now <- liftIO $ getCurrentTime
+      now <- liftIO getCurrentTime
       let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
