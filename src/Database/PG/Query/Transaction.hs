@@ -4,6 +4,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses      #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE TypeFamilies               #-}
 {-# LANGUAGE UndecidableInstances       #-}
 
 module Database.PG.Query.Transaction
@@ -12,8 +13,10 @@ module Database.PG.Query.Transaction
     , TxMode
     , PGTxErr(..)
     , getPGStmtErr
+    , TxET(..)
+    , TxE
+    , TxT
     , Tx
-    , TxE(..)
     , withNotices
     , withQ
     , withQE
@@ -41,6 +44,7 @@ import           Database.PG.Query.Connection
 
 import           Control.Monad.Base
 import           Control.Monad.Except
+import           Control.Monad.Morph          (MFunctor, hoist)
 import           Control.Monad.Reader
 import           Control.Monad.Trans.Control
 import           Data.Aeson
@@ -77,16 +81,32 @@ instance Show TxAccess where
 
 type TxMode = (TxIsolation, Maybe TxAccess)
 
-type Tx = TxE PGTxErr
+newtype TxET e m a
+  = TxET { txHandler :: ReaderT PGConn (ExceptT e m) a }
+  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
 
-newtype TxE e a
-  = TxE { txHandler :: ReaderT PGConn (ExceptT e IO) a }
-  deriving ( Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn
-           , MonadBase IO, MonadBaseControl IO )
+instance MonadTrans (TxET e) where
+  lift = TxET . lift . lift
+
+instance MFunctor (TxET e) where
+  hoist f = TxET . hoist (hoist f) . txHandler
+
+instance (MonadBase IO m) => MonadBase IO (TxET e m) where
+  liftBase = lift . liftBase
+
+instance (MonadBaseControl IO m) => MonadBaseControl IO (TxET e m) where
+  type StM (TxET e m) a = StM (ReaderT PGConn (ExceptT e m)) a
+  liftBaseWith f = TxET $ liftBaseWith $ \run -> f (run . txHandler)
+  restoreM = TxET . restoreM
+
+type TxE e a = TxET e IO a
+type TxT m a = TxET PGTxErr m a
+type Tx a = TxE PGTxErr a
+
 
 {-# INLINE catchE #-}
-catchE :: (e -> e') -> TxE e a -> TxE e' a
-catchE f action = TxE $ mapReaderT (withExceptT f) $ txHandler action
+catchE :: (Functor m) => (e -> e') -> TxET e m a -> TxET e' m a
+catchE f action = TxET $ mapReaderT (withExceptT f) $ txHandler action
 
 data PGTxErr
   = PGTxErr !T.Text ![PrepArg] !Bool !PGErrInternal
@@ -111,7 +131,7 @@ instance Show PGTxErr where
   show = show . encodeToLazyText
 
 {-# INLINE execTx #-}
-execTx :: PGConn -> TxE e a -> ExceptT e IO a
+execTx :: PGConn -> TxET e m a -> ExceptT e m a
 execTx conn tx = runReaderT (txHandler tx) conn
 
 newtype Query
@@ -126,61 +146,61 @@ fromText = Query
 fromBuilder :: TB.Builder -> Query
 fromBuilder = Query . TB.run
 
-withQ :: (FromRes a, ToPrepArgs r)
+withQ :: (MonadIO m, FromRes a, ToPrepArgs r)
       => Query
       -> r
       -> Bool
-      -> Tx a
+      -> TxT m a
 withQ = withQE id
 
-withQE :: (FromRes a, ToPrepArgs r)
+withQE :: (MonadIO m, FromRes a, ToPrepArgs r)
        => (PGTxErr -> e)
        -> Query
        -> r
        -> Bool
-       -> TxE e a
+       -> TxET e m a
 withQE ef q r prep =
   rawQE ef q args prep
   where
     args = toPrepArgs r
 
-rawQ :: (FromRes a)
+rawQ :: (MonadIO m, FromRes a)
      => Query
      -> [PrepArg]
      -> Bool
-     -> Tx a
+     -> TxT m a
 rawQ = rawQE id
 
-rawQE :: (FromRes a)
+rawQE :: (MonadIO m, FromRes a)
       => (PGTxErr -> e)
       -> Query
       -> [PrepArg]
       -> Bool
-      -> TxE e a
-rawQE ef q args prep = TxE $ ReaderT $ \pgConn ->
-  withExceptT (ef . txErrF) $
+      -> TxET e m a
+rawQE ef q args prep = TxET $ ReaderT $ \pgConn ->
+  withExceptT (ef . txErrF) $ (hoist liftIO) $
   execQuery pgConn $ PGQuery (mkTemplate stmt) args prep fromRes
   where
     txErrF = PGTxErr stmt args prep
     stmt = getQueryText q
 
-multiQE :: (FromRes a)
+multiQE :: (MonadIO m, FromRes a)
         => (PGTxErr -> e)
         -> Query
-        -> TxE e a
-multiQE ef q = TxE $ ReaderT $ \pgConn ->
-  withExceptT (ef . txErrF) $
+        -> TxET e m a
+multiQE ef q = TxET $ ReaderT $ \pgConn ->
+  withExceptT (ef . txErrF) $ (hoist liftIO) $
   execMulti pgConn (mkTemplate stmt) fromRes
   where
     txErrF = PGTxErr stmt [] False
     stmt = getQueryText q
 
-multiQ :: (FromRes a)
+multiQ :: (MonadIO m, FromRes a)
        => Query
-       -> Tx a
+       -> TxT m a
 multiQ = multiQE id
 
-withNotices :: Tx a -> Tx (a, [T.Text])
+withNotices :: (MonadIO m) => TxT m a -> TxT m (a, [T.Text])
 withNotices tx =  do
   conn <- asks pgPQConn
   setToNotice
@@ -199,57 +219,57 @@ withNotices tx =  do
         Nothing -> return xs
         Just bs -> getNotices conn (bs:xs)
 
-unitQ :: (ToPrepArgs r)
+unitQ :: (MonadIO m, ToPrepArgs r)
       => Query
       -> r
       -> Bool
-      -> Tx ()
+      -> TxT m ()
 unitQ = withQ
 
-unitQE :: (ToPrepArgs r)
+unitQE :: (MonadIO m, ToPrepArgs r)
        => (PGTxErr -> e)
        -> Query
        -> r
        -> Bool
-       -> TxE e ()
+       -> TxET e m ()
 unitQE = withQE
 
-discardQ :: (ToPrepArgs r)
+discardQ :: (MonadIO m, ToPrepArgs r)
          => Query
          -> r
          -> Bool
-         -> Tx ()
+         -> TxT m ()
 discardQ t r p= do
   Discard () <- withQ t r p
   return ()
 
-discardQE :: (ToPrepArgs r)
+discardQE :: (MonadIO m, ToPrepArgs r)
           => (PGTxErr -> e)
           -> Query
           -> r
           -> Bool
-          -> TxE e ()
+          -> TxET e m ()
 discardQE ef t r p= do
   Discard () <- withQE ef t r p
   return ()
 
-listQ :: (FromRow a, ToPrepArgs r)
+listQ :: (MonadIO m, FromRow a, ToPrepArgs r)
       => Query
       -> r
       -> Bool
-      -> Tx [a]
+      -> TxT m [a]
 listQ = withQ
 
-listQE :: (FromRow a, ToPrepArgs r)
+listQE :: (MonadIO m, FromRow a, ToPrepArgs r)
        => (PGTxErr -> e)
        -> Query
        -> r
        -> Bool
-       -> TxE e [a]
+       -> TxET e m [a]
 listQE = withQE
 
 serverVersion
-  :: TxE e Int
+  :: MonadIO m => TxET e m Int
 serverVersion = do
   conn <- asks pgPQConn
   liftIO $ PQ.serverVersion conn
