@@ -7,6 +7,11 @@
 
 #define ONE_MEGABYTE (1024*1024)
 
+/* FIXME
+ *   We're getting segfaults here (see FIXME below). Discussion
+ *     https://hasurahq.slack.com/archives/CV3UR1MT2/p1605084695393300 
+ */
+
 /* 
  * libpq grows the buffers it uses for input and output, as needed,
  * exponentially, but it never shrinks them. This means that if we try to keep
@@ -62,7 +67,7 @@ void PQclampInOutBufferSpace(PGconn *conn) {
          * so trust our malloc implementation to handle this case in the most
          * efficient way.
          */
-        free(conn->inBuffer);
+        free(conn->inBuffer); /* FIXME (see above) */
         conn->inBuffer = malloc(maxSize);
         conn->inBufSize = maxSize;
         if (conn->inBuffer == NULL) {

@@ -29,9 +29,9 @@ module Database.PG.Query.Pool
   , PGConnectionStale(..)
   ) where
 
+-- import           Database.PG.ExtraBindings
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
-import           Database.PG.ExtraBindings
 
 import           Control.Exception
 import           Control.Monad.Except
@@ -230,8 +230,9 @@ withExpiringPGconn pool f = do
         throw PGConnectionStale
       -- else proceed with callback:
       f connRsrc
+        -- FIXME this segfaults sometimes... see cbits/libpq-bindings.c
         -- Clean up the connection buffers to prevent memory bloat (See #5087):
-        <* liftIO (unsafeClampInOutBufferSpace pgPQConn)
+        -- <* liftIO (unsafeClampInOutBufferSpace pgPQConn)
 
 -- | Used internally (see 'withExpiringPGconn'), but exported in case we need
 -- to allow callback to signal that the connection should be destroyed and we
