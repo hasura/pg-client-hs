@@ -83,7 +83,7 @@ type TxMode = (TxIsolation, Maybe TxAccess)
 
 newtype TxET e m a
   = TxET { txHandler :: ReaderT PGConn (ExceptT e m) a }
-  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn)
+  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn, MonadFix)
 
 instance MonadTrans (TxET e) where
   lift = TxET . lift . lift
