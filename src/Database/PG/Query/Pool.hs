@@ -63,21 +63,24 @@ data ConnParams
     , cpAllowPrepare :: !Bool
     , cpMbLifetime   :: !(Maybe NominalDiffTime)
     -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
+    , cpTimeout      :: !(Maybe Int)
+    -- ^ If passed, 'withConnection' will stop blocking after 'timeout' seconds.
     }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
-defaultConnParams = ConnParams 1 20 60 True Nothing
+defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
 
 initPGPool :: ConnInfo
            -> ConnParams
            -> PGLogger
            -> IO PGPool
 initPGPool ci cp logger =
-  RP.createPool creator destroyer nStripes diffTime nConns
+  RP.createPool creator destroyer nStripes diffTime nConns nTimeout
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
+    nTimeout  = cpTimeout cp
     retryP = mkPGRetryPolicy $ ciRetries ci
     creator   = do
       createdAt <- getCurrentTime
@@ -158,19 +161,22 @@ withConn :: ( MonadIO m
             )
          => PGPool
          -> TxMode
+         -> e
          -> (PGConn -> ExceptT e m a)
          -> ExceptT e m a
-withConn pool txm f =
-  catchConnErr action
+withConn pool txm timeoutError f =
+  catchConnErr action timeoutError
   where
     action  = withExpiringPGconn pool $
              \connRsrc -> runTxOnConn connRsrc txm f
 
 catchConnErr :: (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
-             => m a
+             => m (Maybe a)
+             -> e
              -> m a
-catchConnErr action =
-  control $ \runInIO -> runInIO action `catch` (runInIO . handler)
+catchConnErr action timeoutError =
+  control (\runInIO -> runInIO action `catch` (runInIO . handler))
+      >>= maybe (throwError timeoutError) pure
   where
     handler = mkConnExHandler action fromPGConnErr
 
@@ -188,10 +194,11 @@ runTx :: ( MonadIO m
          )
       => PGPool
       -> TxMode
+      -> e
       -> TxET e m a
       -> ExceptT e m a
-runTx pool txm tx = do
-  withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
+runTx pool txm timeoutError tx = do
+  withConn pool txm timeoutError $ \connRsrc -> runTxOnConn' connRsrc tx
 
 runTx' :: ( MonadIO m
           , MonadBaseControl IO m
@@ -199,11 +206,13 @@ runTx' :: ( MonadIO m
           , FromPGConnErr e
           )
        => PGPool
+       -> e
        -> TxET e m a
        -> ExceptT e m a
-runTx' pool tx = do
-  catchConnErr $
-    withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
+runTx' pool timeoutError tx = do
+  catchConnErr
+    (withExpiringPGconn pool (\connRsrc -> execTx connRsrc tx))
+    timeoutError
 
 runTxOnConn' :: PGConn
              -> TxET e m a
@@ -228,7 +237,7 @@ sqlFromFile fp = do
 -- Note that idle connections that aren't actively expired here will be
 -- destroyed per the timeout policy in Data.Pool.
 withExpiringPGconn
-  :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m a
+  :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m (Maybe a)
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:

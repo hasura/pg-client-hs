@@ -45,8 +45,8 @@ listen
      , MonadIO m
      , MonadBaseControl IO m
      )
-  => PGPool -> PGChannel -> NotifyHandler -> m ()
-listen pool channel handler = catchConnErr $
+  => PGPool -> PGChannel -> NotifyHandler -> e -> m ()
+listen pool channel handler timeoutError = (`catchConnErr` timeoutError) $
   withExpiringPGconn pool $ \pgConn -> do
     let conn = pgPQConn pgConn
 
