@@ -63,7 +63,7 @@ data ConnParams
     , cpAllowPrepare :: !Bool
     , cpMbLifetime   :: !(Maybe NominalDiffTime)
     -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
-    , cpTimeout      :: !(Maybe Int)
+    , cpTimeout      :: !(Maybe NominalDiffTime)
     -- ^ If passed, 'withConnection' will stop blocking after 'timeout' seconds.
     }
   deriving (Show, Eq)
