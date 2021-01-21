@@ -154,15 +154,25 @@ runTxOnConn pgConn txm f = do
       withExceptT fromPGTxErr $ execTx pgConn abortTx
       throwError e
 
+-- | Run a transaction using the postgres pool.
+--
+-- Catches postgres exceptions and converts them to 'e'.
+--
+-- In case a connection acquisition timeout is used, the input
+-- 'e' is used as an error.
 withConn :: ( MonadIO m
             , MonadBaseControl IO m
             , FromPGTxErr e
             , FromPGConnErr e
             )
          => PGPool
+         -- ^ postgres connection pool
          -> TxMode
+         -- ^ transaction mode
          -> e
+         -- ^ exception to throw when the connection acquisition times out
          -> (PGConn -> ExceptT e m a)
+         -- ^ action to perform using the postgres connection
          -> ExceptT e m a
 withConn pool txm timeoutError f =
   catchConnErr action timeoutError
@@ -173,6 +183,7 @@ withConn pool txm timeoutError f =
 catchConnErr :: (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
              => m (Maybe a)
              -> e
+             -- ^ exception to throw when the connection acquisition times out
              -> m a
 catchConnErr action timeoutError =
   control (\runInIO -> runInIO action `catch` (runInIO . handler))
