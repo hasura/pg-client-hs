@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts  #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards   #-}
+{-# LANGUAGE ScopedTypeVariables  #-}
 {-# LANGUAGE TemplateHaskell   #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
@@ -63,21 +64,24 @@ data ConnParams
     , cpAllowPrepare :: !Bool
     , cpMbLifetime   :: !(Maybe NominalDiffTime)
     -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
+    , cpTimeout      :: !(Maybe NominalDiffTime)
+    -- ^ If passed, 'withConnection' will throw a 'TimeoutException' after 'timeout' seconds.
     }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
-defaultConnParams = ConnParams 1 20 60 True Nothing
+defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
 
 initPGPool :: ConnInfo
            -> ConnParams
            -> PGLogger
            -> IO PGPool
 initPGPool ci cp logger =
-  RP.createPool creator destroyer nStripes diffTime nConns
+  RP.createPool' creator destroyer nStripes diffTime nConns nTimeout
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
+    nTimeout  = cpTimeout cp
     retryP = mkPGRetryPolicy $ ciRetries ci
     creator   = do
       createdAt <- getCurrentTime
@@ -151,6 +155,10 @@ runTxOnConn pgConn txm f = do
       withExceptT fromPGTxErr $ execTx pgConn abortTx
       throwError e
 
+-- | Run a transaction using the postgres pool.
+--
+-- Catches postgres exceptions and converts them to 'e', including
+-- 'TimeoutException's thrown in case the timeout is set and reached.
 withConn :: ( MonadIO m
             , MonadBaseControl IO m
             , FromPGTxErr e
@@ -166,13 +174,22 @@ withConn pool txm f =
     action  = withExpiringPGconn pool $
              \connRsrc -> runTxOnConn connRsrc txm f
 
-catchConnErr :: (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
+catchConnErr :: forall e m a
+              . (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
              => m a
              -> m a
 catchConnErr action =
-  control $ \runInIO -> runInIO action `catch` (runInIO . handler)
+  control $ \runInIO ->
+    runInIO action `catches`
+      [ Handler (runInIO . handler)
+      , Handler (runInIO . handleTimeout)
+      ]
   where
     handler = mkConnExHandler action fromPGConnErr
+
+    handleTimeout :: RP.TimeoutException -> m a
+    handleTimeout _ =
+      throwError (fromPGConnErr $ PGConnErr "connection acquisition timeout expired")
 
 {-# INLINE mkConnExHandler #-}
 mkConnExHandler :: (MonadError e m)

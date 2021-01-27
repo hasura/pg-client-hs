@@ -3,4 +3,4 @@ packages: .
 source-repository-package
   type: git
   location: https://github.com/hasura/pool.git
-  tag: 0fdfaed4e109ca6a6bf00ed6d79c329626e3bdd4
+  tag: c48c89f0f4a9e424103d4004a8c59ca9318c88ed
