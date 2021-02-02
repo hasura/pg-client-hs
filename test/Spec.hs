@@ -18,6 +18,17 @@ import           Control.Monad.Except   (ExceptT, MonadTrans (lift), runExceptT)
 import qualified Data.ByteString.Char8  as BS
 import qualified System.Environment     as Env
 
+{- Note [Running tests]
+~~~~~~~~~~~~~~~~~~~~~~~
+The tests in this module expect a postgres instance running. No setup is
+required, these tests do not run any query on the database. The only requirement
+is that the environment variable DATABASE_URL is set such that it is a valid
+connection string to this instance (e.g.
+"postgres://user:pass@127.0.0.1:5432/instance?sslmode=disable").
+
+TODO: run these tests as part of CI.
+-}
+
 main :: IO ()
 main = hspec $ do
   describe "acquiring connections" do
