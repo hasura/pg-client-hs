@@ -43,6 +43,7 @@ library
                      , template-haskell >= 2.11
                      , th-lift >= 0.7
                      , th-lift-instances >= 0.1
+                     , ekg-core
 
                      , mtl
                      , transformers-base >= 0.4
