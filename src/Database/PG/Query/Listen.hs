@@ -4,11 +4,13 @@
 {-# LANGUAGE OverloadedStrings          #-}
 
 -- Reference:- https://github.com/hasura/skor/blob/master/src/skor.c
+--
+-- See also Ex 31-2 in: https://www.postgresql.org/docs/9.1/libpq-example.html
 
 module Database.PG.Query.Listen
   ( PGChannel(..)
   , NotifyHandler
-  , PGNotifyEvent(..)
+  , OnStartHandler
   , listen
   )
 where
@@ -30,14 +32,14 @@ newtype PGChannel
   = PGChannel {getChannelTxt :: T.Text}
   deriving(Show, Eq, IsString)
 
-data PGNotifyEvent
-  = PNEOnStart
-  | PNEPQNotify !PQ.Notify
-  deriving Show
+-- | A callback to run on each event
+type NotifyHandler = PQ.Notify -> IO ()
 
-type NotifyHandler = PGNotifyEvent -> IO ()
+-- | A callback run at most once per call to 'listen', after @LISTEN@ has been
+-- issued and before any 'NotifyHandler' are called
+type OnStartHandler = IO ()
 
--- | listen on given channel
+-- | LISTEN on given channel. This never exits, except in the case of exceptions.
 listen
   :: ( FromPGConnErr e
      , FromPGTxErr e
@@ -45,8 +47,8 @@ listen
      , MonadIO m
      , MonadBaseControl IO m
      )
-  => PGPool -> PGChannel -> NotifyHandler -> m ()
-listen pool channel handler = catchConnErr $
+  => PGPool -> PGChannel -> OnStartHandler -> NotifyHandler -> m void
+listen pool channel onStartHandler notifyHandler = catchConnErr $
   withExpiringPGconn pool $ \pgConn -> do
     let conn = pgPQConn pgConn
 
@@ -54,13 +56,12 @@ listen pool channel handler = catchConnErr $
     eRes <- liftIO $ runExceptT $
             execMulti pgConn (mkTemplate listenCmd) $ const $ return ()
     either throwTxErr return eRes
-    -- Emit onStart event
-    liftIO $ handler PNEOnStart
+    -- Now we're subscribed...
+    liftIO onStartHandler
     forever $ do
-      -- Make postgres connection ready for reading
-      r <- liftIO $ runExceptT $ waitForReadReadiness conn
+      r <- liftIO $ runExceptT $ waitForData conn
       either (throwError . fromPGConnErr) return r
-      -- Check for input
+      -- Read data now waiting on the socket:
       success <- liftIO $ PQ.consumeInput conn
       unless success throwConsumeFailed
       liftIO $ processNotifs conn
@@ -76,16 +77,16 @@ listen pool channel handler = catchConnErr $
       mNotify <- PQ.notifies conn
       onJust mNotify $ \n -> do
         -- Apply notify handler on arrived notification
-        handler $ PNEPQNotify n
+        notifyHandler n
         -- Process remaining notifications if any
         processNotifs conn
 
-waitForReadReadiness :: PQ.Connection -> ExceptT PGConnErr IO ()
-waitForReadReadiness conn = do
+waitForData :: PQ.Connection -> ExceptT PGConnErr IO ()
+waitForData conn = do
   -- Get file descriptor of underlying socket of a connection
   mFd <- lift $ PQ.socket conn
   fd <- maybe (throwError $ PGConnErr "connection is not currently open") pure mFd
-  -- Wait for the socket to be ready for reading
+  -- Block, waiting for there to be data to read on the socket:
   waitResult <- lift . try $ threadWaitRead fd
   either (throwError . ioErrorToPGConnErr) return waitResult
   where

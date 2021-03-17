@@ -137,6 +137,14 @@ class FromPGTxErr e where
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
+-- These instances permit (FromPGConnErr e, MonadError e m)=> ... to unify with IO
+instance FromPGTxErr IOException where
+  fromPGTxErr = userError . show
+
+instance FromPGConnErr IOException where
+  fromPGConnErr = userError . show
+
+
 runTxOnConn :: (MonadIO m, FromPGTxErr e)
             => PGConn
             -> TxMode
