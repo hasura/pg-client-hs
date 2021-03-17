@@ -7,7 +7,8 @@
 
 module Database.PG.Query.Pool
   ( ConnParams (..)
-  , PGPool
+  , PGPool(..)
+  , PGPoolStats(..)
   , getInUseConnections
   , withExpiringPGconn
   , defaultConnParams
@@ -108,8 +109,7 @@ initPGPool ci cp logger = do
       createdAt <- getCurrentTime
       pqConn  <- initPQConn ci logger
       connAcquiredAt <- getCurrentTime
-      let connAcquiredMillis = realToFrac (1000 * diffUTCTime connAcquiredAt createdAt)
-      print connAcquiredMillis
+      let connAcquiredMillis = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
       EKG.Distribution.add (_connAcquireTime stats) connAcquiredMillis
       ctr     <- newIORef 0
       table   <- HI.new
