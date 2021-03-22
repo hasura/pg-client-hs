@@ -55,16 +55,17 @@ import qualified System.Metrics.Distribution as EKG.Distribution
 
 data PGPool = PGPool
   { -- | the underlying connection pool
-    _pool :: RP.Pool PGConn,
+    _pool :: !(RP.Pool PGConn),
     -- | EKG stats about how we acquire, release, and manage connections
-    _stats :: PGPoolStats
+    _stats :: !PGPoolStats
   }
 
 -- | Actual ekg gauges and other metrics are not created here, since those depend on
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
-newtype PGPoolStats = PGPoolStats
+data PGPoolStats = PGPoolStats
   { -- | time taken to acquire new connections from postgres
-    _connAcquireTime :: Distribution
+    _pgConnAcquireDelay :: !Distribution
+  , _poolConnAcquireDelay :: !Distribution
   }
 
 getInUseConnections :: PGPool -> IO Int
@@ -89,7 +90,8 @@ defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
 
 initPGPoolStats :: IO PGPoolStats
 initPGPoolStats = do
-  _connAcquireTime <- EKG.Distribution.new
+  _pgConnAcquireDelay <- EKG.Distribution.new
+  _poolConnAcquireDelay <- EKG.Distribution.new
   pure PGPoolStats {..}
 
 initPGPool :: ConnInfo
@@ -110,7 +112,7 @@ initPGPool ci cp logger = do
       pqConn  <- initPQConn ci logger
       connAcquiredAt <- getCurrentTime
       let connAcquiredMillis = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
-      EKG.Distribution.add (_connAcquireTime stats) connAcquiredMillis
+      EKG.Distribution.add (_pgConnAcquireDelay stats) connAcquiredMillis
       ctr     <- newIORef 0
       table   <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
@@ -273,9 +275,12 @@ withExpiringPGconn
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:
+  old <- liftIO getCurrentTime
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
     RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
       now <- liftIO getCurrentTime
+      let millis = realToFrac (1000000 * diffUTCTime now old)
+      liftIO (EKG.Distribution.add (_poolConnAcquireDelay (_stats pool)) millis)
       let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
