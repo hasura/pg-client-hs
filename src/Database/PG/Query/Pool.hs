@@ -64,8 +64,8 @@ data PGPool = PGPool
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
 data PGPoolStats = PGPoolStats
   { -- | time taken to acquire new connections from postgres
-    _pgConnAcquireDelay :: !Distribution
-  , _poolConnAcquireDelay :: !Distribution
+    _dbConnAcquireLatency :: !Distribution
+  , _poolConnAcquireLatency :: !Distribution
   }
 
 getInUseConnections :: PGPool -> IO Int
@@ -90,8 +90,8 @@ defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
 
 initPGPoolStats :: IO PGPoolStats
 initPGPoolStats = do
-  _pgConnAcquireDelay <- EKG.Distribution.new
-  _poolConnAcquireDelay <- EKG.Distribution.new
+  _dbConnAcquireLatency <- EKG.Distribution.new
+  _poolConnAcquireLatency <- EKG.Distribution.new
   pure PGPoolStats {..}
 
 initPGPool :: ConnInfo
@@ -112,7 +112,7 @@ initPGPool ci cp logger = do
       pqConn  <- initPQConn ci logger
       connAcquiredAt <- getCurrentTime
       let connAcquiredMillis = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
-      EKG.Distribution.add (_pgConnAcquireDelay stats) connAcquiredMillis
+      EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMillis
       ctr     <- newIORef 0
       table   <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
@@ -280,7 +280,7 @@ withExpiringPGconn pool f = do
     RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
       now <- liftIO getCurrentTime
       let millis = realToFrac (1000000 * diffUTCTime now old)
-      liftIO (EKG.Distribution.add (_poolConnAcquireDelay (_stats pool)) millis)
+      liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) millis)
       let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
