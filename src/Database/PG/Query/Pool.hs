@@ -7,7 +7,8 @@
 
 module Database.PG.Query.Pool
   ( ConnParams (..)
-  , PGPool(..)
+  , PGPool
+  , pgPoolStats
   , PGPoolStats(..)
   , getInUseConnections
   , withExpiringPGconn
@@ -59,6 +60,9 @@ data PGPool = PGPool
     -- | EKG stats about how we acquire, release, and manage connections
     _stats :: !PGPoolStats
   }
+
+pgPoolStats :: PGPool -> PGPoolStats
+pgPoolStats = _stats
 
 -- | Actual ekg gauges and other metrics are not created here, since those depend on
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
