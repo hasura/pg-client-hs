@@ -8,6 +8,8 @@
 module Database.PG.Query.Pool
   ( ConnParams (..)
   , PGPool
+  , pgPoolStats
+  , PGPoolStats(..)
   , getInUseConnections
   , withExpiringPGconn
   , defaultConnParams
@@ -49,11 +51,29 @@ import qualified Data.HashTable.IO             as HI
 import qualified Data.Pool                     as RP
 import qualified Data.Text                     as T
 import qualified Database.PostgreSQL.LibPQ     as PQ
+import System.Metrics.Distribution (Distribution)
+import qualified System.Metrics.Distribution as EKG.Distribution
 
-type PGPool = RP.Pool PGConn
+data PGPool = PGPool
+  { -- | the underlying connection pool
+    _pool :: !(RP.Pool PGConn),
+    -- | EKG stats about how we acquire, release, and manage connections
+    _stats :: !PGPoolStats
+  }
+
+pgPoolStats :: PGPool -> PGPoolStats
+pgPoolStats = _stats
+
+-- | Actual ekg gauges and other metrics are not created here, since those depend on
+-- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
+data PGPoolStats = PGPoolStats
+  { -- | time taken to acquire new connections from postgres
+    _dbConnAcquireLatency :: !Distribution
+  , _poolConnAcquireLatency :: !Distribution
+  }
 
 getInUseConnections :: PGPool -> IO Int
-getInUseConnections = RP.getInUseResourceCount
+getInUseConnections = RP.getInUseResourceCount . _pool
 
 data ConnParams
   = ConnParams
@@ -72,30 +92,40 @@ data ConnParams
 defaultConnParams :: ConnParams
 defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
 
+initPGPoolStats :: IO PGPoolStats
+initPGPoolStats = do
+  _dbConnAcquireLatency <- EKG.Distribution.new
+  _poolConnAcquireLatency <- EKG.Distribution.new
+  pure PGPoolStats {..}
+
 initPGPool :: ConnInfo
            -> ConnParams
            -> PGLogger
            -> IO PGPool
-initPGPool ci cp logger =
-  RP.createPool' creator destroyer nStripes diffTime nConns nTimeout
+initPGPool ci cp logger = do
+  _stats <- initPGPoolStats
+  _pool <-  RP.createPool' (creator _stats) destroyer nStripes diffTime nConns nTimeout
+  pure PGPool {..}
   where
     nStripes  = cpStripes cp
     nConns    = cpConns cp
     nTimeout  = cpTimeout cp
     retryP = mkPGRetryPolicy $ ciRetries ci
-    creator   = do
+    creator stats = do
       createdAt <- getCurrentTime
       pqConn  <- initPQConn ci logger
+      connAcquiredAt <- getCurrentTime
+      let connAcquiredMillis = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
+      EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMillis
       ctr     <- newIORef 0
       table   <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
     diffTime  = fromIntegral $ cpIdleTime cp
 
--- |
--- Release all connections acquired by the pool.
+-- | Release all connections acquired by the pool.
 destroyPGPool :: PGPool -> IO ()
-destroyPGPool = RP.destroyAllResources
+destroyPGPool = RP.destroyAllResources . _pool
 
 data PGExecErr
   = PGExecErrConn !PGConnErr
@@ -249,9 +279,12 @@ withExpiringPGconn
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:
+  old <- liftIO getCurrentTime
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
-    RP.withResource pool $ \connRsrc@PGConn{..} -> do
+    RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
       now <- liftIO getCurrentTime
+      let millis = realToFrac (1000000 * diffUTCTime now old)
+      liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) millis)
       let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
