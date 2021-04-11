@@ -97,8 +97,8 @@ instance ToJSON PGExecStatus where
 type PGRetryPolicyM m = CR.RetryPolicyM m
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
-newtype PGLogEvent
-  = PLERetryMsg DT.Text
+data PGLogEvent
+  = PLERetryMsg DT.Text | PLEWarnMsg DT.Text 
   deriving (Show, Eq)
 
 type PGLogger = PGLogEvent -> IO ()
@@ -396,14 +396,14 @@ mkPGRetryPolicy noRetries =
 
 data PGConn
   = PGConn
-  { pgPQConn       :: !PQ.Connection
-  , pgAllowPrepare :: !Bool
-  , pgRetryPolicy  :: !PGRetryPolicy
-  , pgLogger       :: !PGLogger
-  , pgCounter      :: !(IORef Word16)
-  , pgTable        :: !RKLookupTable
-  , pgCreatedAt   :: !UTCTime
-  , pgMbLifetime   :: !(Maybe NominalDiffTime)
+  { pgPQConn        :: !PQ.Connection
+  , pgAllowPrepare  :: !Bool
+  , pgRetryPolicy   :: !PGRetryPolicy
+  , pgLogger        :: !PGLogger
+  , pgCounter       :: !(IORef Word16)
+  , pgTable         :: !RKLookupTable
+  , pgCreatedAt     :: !UTCTime
+  , pgMbLifetime    :: !(Maybe NominalDiffTime)
   -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
   }
 
