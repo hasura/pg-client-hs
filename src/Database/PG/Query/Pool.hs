@@ -1,8 +1,9 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE LambdaCase          #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
@@ -54,11 +55,14 @@ import qualified Database.PostgreSQL.LibPQ     as PQ
 import System.Metrics.Distribution (Distribution)
 import qualified System.Metrics.Distribution as EKG.Distribution
 
-data PGPool = PGPool
-  { -- | the underlying connection pool
-    _pool :: !(RP.Pool PGConn),
-    -- | EKG stats about how we acquire, release, and manage connections
-    _stats :: !PGPoolStats
+data PGPool 
+  = PGPool
+  { _pool   :: !(RP.Pool PGConn)
+  -- ^ the underlying connection pool  
+  , _stats  :: !PGPoolStats
+  -- ^ EKG stats about how we acquire, release, and manage connections
+  , _logger :: !PGLogger 
+  -- ^ logger to log the pool saturation warnings 
   }
 
 pgPoolStats :: PGPool -> PGPoolStats
@@ -103,8 +107,9 @@ initPGPool :: ConnInfo
            -> PGLogger
            -> IO PGPool
 initPGPool ci cp logger = do
-  _stats <- initPGPoolStats
-  _pool <-  RP.createPool' (creator _stats) destroyer nStripes diffTime nConns nTimeout
+  _stats  <- initPGPoolStats
+  _pool   <- RP.createPool' (creator _stats) destroyer nStripes diffTime nConns nTimeout
+  let _logger = logger
   pure PGPool {..}
   where
     nStripes  = cpStripes cp
@@ -281,21 +286,48 @@ withExpiringPGconn pool f = do
   -- creation of new connection:
   old <- liftIO getCurrentTime
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
-    RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
-      now <- liftIO getCurrentTime
-      let millis = realToFrac (1000000 * diffUTCTime now old)
-      liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) millis)
-      let connectionStale =
-            maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
-      when connectionStale $ do
-        -- Throwing is the only way to signal to resource pool to discard the
-        -- connection at this time, so we need to use it for control flow:
-        throw PGConnectionStale
-      -- else proceed with callback:
-      f connRsrc
-        -- FIXME this segfaults sometimes... see cbits/libpq-bindings.c
-        -- Clean up the connection buffers to prevent memory bloat (See #5087):
-        -- <* liftIO (unsafeClampInOutBufferSpace pgPQConn)
+    -- We would like to log the cases when the pool is completely saturated, This is 
+    -- not possible by only using 'RP.withResource' because when the pool is saturated it 
+    -- goes into the 'retry' loop and waits until atleast one resource is empty. Hence it's
+    -- not trivial to log the error from inside the STM 'retry' block.
+    -- So we use the 'tryWithResource' which returns 'Nothing' if connection is not possible,
+    -- when that happens we log the error and then use the 'RP.withResource' to establish the 
+    -- connection. This way we can log the error as well as execute the 'retry' logic.
+    resource <- RP.tryWithResource (_pool pool) $ \connRsrc -> action connRsrc old
+    case resource of
+      -- Log when the pool is saturated
+      Nothing -> do
+        liftIO $ _logger pool $ PLERetryMsg  "connection pool saturated... waiting to acquire connection"
+        RP.withResource (_pool pool) $ \connRsrc -> action connRsrc old  
+      (Just res) -> return res
+    where
+      action connRsrc@PGConn{..} old = do 
+        now <- liftIO getCurrentTime
+        let millis = realToFrac (1000000 * diffUTCTime now old)
+        liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) millis)
+        let connectionStale =
+              maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
+
+        -- Log a warning when the pool is getting saturated
+        isPoolSaturated <- liftIO _isPoolSaturated 
+        when isPoolSaturated $ do
+          liftIO $ do pgLogger  $ PLEWarnMsg "connection pool nearing saturation, consider increasing connection pool size"
+        
+        when connectionStale $ do
+          -- Throwing is the only way to signal to resource pool to discard the
+          -- connection at this time, so we need to use it for control flow:
+          throw PGConnectionStale
+        -- else proceed with callback:
+        f connRsrc
+          -- FIXME this segfaults sometimes... see cbits/libpq-bindings.c
+          -- Clean up the connection buffers to prevent memory bloat (See #5087):
+          -- <* liftIO (unsafeClampInOutBufferSpace pgPQConn)
+      
+      _isPoolSaturated = do
+        inUseConns <- getInUseConnections pool
+        let maxConns =  RP.maxResources (_pool pool)
+        let saturationLevel = (fromIntegral inUseConns / fromIntegral maxConns) * 100.0 :: Double
+        return $ saturationLevel >= 80.0
 
 -- | Used internally (see 'withExpiringPGconn'), but exported in case we need
 -- to allow callback to signal that the connection should be destroyed and we

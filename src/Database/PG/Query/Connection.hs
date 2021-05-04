@@ -97,8 +97,8 @@ instance ToJSON PGExecStatus where
 type PGRetryPolicyM m = CR.RetryPolicyM m
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
-newtype PGLogEvent
-  = PLERetryMsg DT.Text
+data PGLogEvent
+  = PLERetryMsg DT.Text | PLEWarnMsg DT.Text
   deriving (Show, Eq)
 
 type PGLogger = PGLogEvent -> IO ()
