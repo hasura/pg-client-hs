@@ -33,7 +33,6 @@ module Database.PG.Query.Pool
   , PGConnectionStale(..)
   ) where
 
--- import           Database.PG.ExtraBindings
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
 
