@@ -33,9 +33,13 @@ module Database.PG.Query.Pool
   , PGConnectionStale(..)
   ) where
 
--- import           Database.PG.ExtraBindings
-import           Database.PG.Query.Connection
-import           Database.PG.Query.Transaction
+import qualified Data.ByteString               as BS
+import qualified Data.HashTable.IO             as HI
+import qualified Data.Pool                     as RP
+import qualified Data.Text                     as T
+import qualified Data.Text.Encoding            as TE
+import qualified Database.PostgreSQL.LibPQ     as PQ
+import qualified System.Metrics.Distribution   as EKG.Distribution
 
 import           Control.Exception
 import           Control.Monad.Except
@@ -43,16 +47,13 @@ import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.IORef
 import           Data.Time
-import           GHC.Exts                      (fromString)
+import           GHC.Exts                    (fromString)
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
+import           System.Metrics.Distribution (Distribution)
 
-import qualified Data.HashTable.IO             as HI
-import qualified Data.Pool                     as RP
-import qualified Data.Text                     as T
-import qualified Database.PostgreSQL.LibPQ     as PQ
-import System.Metrics.Distribution (Distribution)
-import qualified System.Metrics.Distribution as EKG.Distribution
+import           Database.PG.Query.Connection
+import           Database.PG.Query.Transaction
 
 data PGPool = PGPool
   { -- | the underlying connection pool
@@ -260,11 +261,18 @@ runTxOnConn' = execTx
 sql :: QuasiQuoter
 sql = QuasiQuoter { quoteExp = \a -> [|fromString a|] }
 
+-- | Construct a 'Query' at compile-time from some given file.
+--
+-- NOTE: This function assumes that the file is UTF-8 encoded.
+--
+-- Any incompatible character encodings will be rejected at compile-time with
+-- a 'TE.UnicodeException' error.
 sqlFromFile :: FilePath -> Q Exp
 sqlFromFile fp = do
-  contents <- qAddDependentFile fp >> runIO (readFile fp)
-  [| fromString contents |]
-
+  bytes <- qAddDependentFile fp >> runIO (BS.readFile fp)
+  case TE.decodeUtf8' bytes of
+    Left err -> throw $! err
+    Right contents -> [| fromText contents |]
 
 -- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
 -- optionally expiring the connection after a configurable amount of time so

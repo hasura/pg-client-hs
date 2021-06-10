@@ -54,7 +54,7 @@ import           GHC.Generics
 import qualified Control.Retry                as CR
 import qualified Data.ByteString              as DB
 import qualified Data.ByteString.Lazy         as BL
-import qualified Data.ByteString.Lazy.Builder as BB
+import qualified Data.ByteString.Builder      as BB
 import qualified Data.HashTable.IO            as HI
 import qualified Data.Text                    as DT
 import qualified Data.Text.Encoding           as TE
