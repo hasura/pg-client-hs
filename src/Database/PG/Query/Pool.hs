@@ -272,7 +272,11 @@ sqlFromFile fp = do
   bytes <- qAddDependentFile fp >> runIO (BS.readFile fp)
   case TE.decodeUtf8' bytes of
     Left err -> throw $! err
-    Right contents -> [| fromText contents |]
+    Right txtContents ->
+      -- NOTE: This is (effectively) the same implementation as the 'Lift'
+      -- instance for 'Text' from 'th-lift-instances'.
+      let strContents = T.unpack txtContents
+      in [| fromText . T.pack $ strContents |]
 
 -- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
 -- optionally expiring the connection after a configurable amount of time so
