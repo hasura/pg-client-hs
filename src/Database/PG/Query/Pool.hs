@@ -47,10 +47,10 @@ import           Control.Monad.Trans.Control
 import           Data.Aeson
 import           Data.IORef
 import           Data.Time
-import           GHC.Exts                    (fromString)
+import           GHC.Exts                      (fromString)
 import           Language.Haskell.TH.Quote
 import           Language.Haskell.TH.Syntax
-import           System.Metrics.Distribution (Distribution)
+import           System.Metrics.Distribution   (Distribution)
 
 import           Database.PG.Query.Connection
 import           Database.PG.Query.Transaction
