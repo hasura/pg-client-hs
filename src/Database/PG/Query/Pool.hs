@@ -1,8 +1,8 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE ScopedTypeVariables  #-}
-{-# LANGUAGE TemplateHaskell   #-}
+{-# LANGUAGE FlexibleContexts    #-}
+{-# LANGUAGE OverloadedStrings   #-}
+{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TemplateHaskell     #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
@@ -57,7 +57,7 @@ import           Database.PG.Query.Transaction
 
 data PGPool = PGPool
   { -- | the underlying connection pool
-    _pool :: !(RP.Pool PGConn),
+    _pool  :: !(RP.Pool PGConn),
     -- | EKG stats about how we acquire, release, and manage connections
     _stats :: !PGPoolStats
   }
@@ -69,7 +69,7 @@ pgPoolStats = _stats
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
 data PGPoolStats = PGPoolStats
   { -- | time taken to acquire new connections from postgres
-    _dbConnAcquireLatency :: !Distribution
+    _dbConnAcquireLatency   :: !Distribution
   , _poolConnAcquireLatency :: !Distribution
   }
 

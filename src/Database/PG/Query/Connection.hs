@@ -51,15 +51,15 @@ import           Data.Word
 import           GHC.Exts
 import           GHC.Generics
 
-import qualified Control.Retry                as CR
-import qualified Data.ByteString              as DB
-import qualified Data.ByteString.Lazy         as BL
-import qualified Data.ByteString.Builder      as BB
-import qualified Data.HashTable.IO            as HI
-import qualified Data.Text                    as DT
-import qualified Data.Text.Encoding           as TE
-import qualified Data.Text.Encoding.Error     as TE
-import qualified Database.PostgreSQL.LibPQ    as PQ
+import qualified Control.Retry             as CR
+import qualified Data.ByteString           as DB
+import qualified Data.ByteString.Builder   as BB
+import qualified Data.ByteString.Lazy      as BL
+import qualified Data.HashTable.IO         as HI
+import qualified Data.Text                 as DT
+import qualified Data.Text.Encoding        as TE
+import qualified Data.Text.Encoding.Error  as TE
+import qualified Database.PostgreSQL.LibPQ as PQ
 
 data ConnOptions
   = ConnOptions
@@ -402,7 +402,7 @@ data PGConn
   , pgLogger       :: !PGLogger
   , pgCounter      :: !(IORef Word16)
   , pgTable        :: !RKLookupTable
-  , pgCreatedAt   :: !UTCTime
+  , pgCreatedAt    :: !UTCTime
   , pgMbLifetime   :: !(Maybe NominalDiffTime)
   -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
   }
