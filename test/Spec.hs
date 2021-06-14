@@ -10,13 +10,11 @@ import           Test.Hspec
 
 import           Database.PG.Query
 
-import           Control.Concurrent     (forkIO, threadDelay)
-import           Control.Exception      (Exception (fromException))
-import           Control.Exception.Base (IOException, SomeException)
-import           Control.Monad.Except   (ExceptT, MonadTrans (lift), runExceptT)
+import           Control.Concurrent    (forkIO, threadDelay)
+import           Control.Monad.Except  (MonadTrans (lift), runExceptT)
 
-import qualified Data.ByteString.Char8  as BS
-import qualified System.Environment     as Env
+import qualified Data.ByteString.Char8 as BS
+import qualified System.Environment    as Env
 
 {- Note [Running tests]
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -81,7 +79,7 @@ noConnectionAvailable = do
     Right _               -> mempty
   where
     action pool = withFreshPool pool nada >>= \case
-      Left (e :: PGExecErr) -> mempty
+      Left (_ :: PGExecErr) -> mempty
       Right _               -> err "connection acquisition expected to fail"
 
 releaseAndAcquire :: IO (Maybe String)
@@ -98,7 +96,7 @@ releaseAndAcquireWithTimeout :: IO (Maybe String)
 releaseAndAcquireWithTimeout = do
   pool <- mkPool
   _ <- forkIO $ withFreshPool pool (threadDelay 300_000) >>= \case
-    Left (e :: PGExecErr) -> error "unexpected error when acquiring connections"
+    Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
     Right _               -> mempty
   threadDelay 100_000
   withFreshPool pool nada >>= \case
@@ -109,10 +107,10 @@ releaseAndAcquireWithTimeoutNegative :: IO (Maybe String)
 releaseAndAcquireWithTimeoutNegative = do
   pool <- mkPool
   _ <- forkIO $ withFreshPool pool (threadDelay 10_000_000) >>= \case
-    Left (e :: PGExecErr) -> error "unexpected error when acquiring connections"
+    Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
     Right _               -> mempty
   threadDelay 1_000_000
   withFreshPool pool nada >>= \case
-    Left (e :: PGExecErr) -> mempty
+    Left (_ :: PGExecErr) -> mempty
     Right _               -> err "Wat"
 

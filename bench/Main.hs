@@ -6,24 +6,23 @@ module Main where
 import           Control.Monad.Except
 import           Data.Functor.Identity
 
-import qualified Control.Exception            as E
-import qualified Criterion.Main               as C
-import qualified Data.ByteString              as B
-import qualified Data.ByteString.Char8        as BC
-import qualified Data.FileEmbed               as FE
-import qualified Data.Text                    as T
-import qualified Data.Text.Encoding           as TE
+import qualified Control.Exception          as E
+import qualified Criterion.Main             as C
+import qualified Data.ByteString            as B
+import qualified Data.ByteString.Char8      as BC
+import qualified Data.FileEmbed             as FE
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
 -- import qualified Data.Hashable                as Hash
 import           Data.Int
-import qualified Database.PG.Query            as Q
-import qualified Database.PG.Query.Connection as Q
-import qualified Hasql.Decoders               as HD
-import qualified Hasql.Encoders               as HE
-import qualified Hasql.Pool                   as HP
-import qualified Hasql.Statement              as HS
-import qualified Hasql.Transaction            as HT
-import qualified Hasql.Transaction.Sessions   as HT
-import qualified System.IO.Error              as E
+import qualified Database.PG.Query          as Q
+import qualified Hasql.Decoders             as HD
+import qualified Hasql.Encoders             as HE
+import qualified Hasql.Pool                 as HP
+import qualified Hasql.Statement            as HS
+import qualified Hasql.Transaction          as HT
+import qualified Hasql.Transaction.Sessions as HT
+import qualified System.IO.Error            as E
 
 withEx :: (Show e) => IO (Either e a) -> IO a
 withEx action =
