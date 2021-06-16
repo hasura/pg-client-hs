@@ -6,24 +6,23 @@ module Main where
 import           Control.Monad.Except
 import           Data.Functor.Identity
 
-import qualified Control.Exception            as E
-import qualified Criterion.Main               as C
-import qualified Data.ByteString              as B
-import qualified Data.ByteString.Char8        as BC
-import qualified Data.FileEmbed               as FE
-import qualified Data.Text                    as T
-import qualified Data.Text.Encoding           as TE
+import qualified Control.Exception          as E
+import qualified Criterion.Main             as C
+import qualified Data.ByteString            as B
+import qualified Data.ByteString.Char8      as BC
+import qualified Data.FileEmbed             as FE
+import qualified Data.Text                  as T
+import qualified Data.Text.Encoding         as TE
 -- import qualified Data.Hashable                as Hash
 import           Data.Int
-import qualified Database.PG.Query            as Q
-import qualified Database.PG.Query.Connection as Q
-import qualified Hasql.Decoders               as HD
-import qualified Hasql.Encoders               as HE
-import qualified Hasql.Pool                   as HP
-import qualified Hasql.Statement              as HS
-import qualified Hasql.Transaction            as HT
-import qualified Hasql.Transaction.Sessions   as HT
-import qualified System.IO.Error              as E
+import qualified Database.PG.Query          as Q
+import qualified Hasql.Decoders             as HD
+import qualified Hasql.Encoders             as HE
+import qualified Hasql.Pool                 as HP
+import qualified Hasql.Statement            as HS
+import qualified Hasql.Transaction          as HT
+import qualified Hasql.Transaction.Sessions as HT
+import qualified System.IO.Error            as E
 
 withEx :: (Show e) => IO (Either e a) -> IO a
 withEx action =
@@ -37,7 +36,7 @@ runHTx :: HP.Pool -> HT.Transaction a -> IO a
 runHTx pool tx =
   withEx $ HP.use pool $ HT.transaction HT.Serializable HT.Write tx
 
-type CTx = Q.TxE Q.PGExecErr
+type CTx a = Q.TxE Q.PGExecErr a
 
 type HTx = HT.Transaction
 
@@ -66,14 +65,18 @@ benchQ (poolC, poolH) n (txC, txH) = do
 
 getPoolC :: IO Q.PGPool
 getPoolC = do
-  let connInfo = Q.defaultConnInfo
-                 { Q.connHost = "127.0.0.1"
-                 , Q.connPort  = 7432
-                 , Q.connUser = "admin"
-                 , Q.connDatabase = "chinook"
-                 }
-      connParams = Q.ConnParams 1 1 180 Nothing
-  Q.initPGPool connInfo connParams
+  let connDetails = Q.CDOptions Q.ConnOptions
+                    { Q.connHost = "127.0.0.1"
+                    , Q.connPort  = 7432
+                    , Q.connUser = "admin"
+                    , Q.connPassword = ""
+                    , Q.connDatabase = "chinook"
+                    , Q.connOptions = Nothing
+                    }
+      connInfo = Q.ConnInfo 0 connDetails
+      connParams = Q.ConnParams 1 1 180 False Nothing Nothing
+      logger     = const (return ())
+  Q.initPGPool connInfo connParams logger
 
 q1 :: T.Text
 q1 = $(FE.embedStringFile "bench/queries/artistByArtistId.sql")
@@ -88,8 +91,8 @@ mkTx1H :: Bool -> HTx B.ByteString
 mkTx1H isPrepared =
   HT.statement 3 $ HS.Statement (TE.encodeUtf8 q1) encoder decoder isPrepared
   where
-    encoder = HE.param HE.int8
-    decoder = HD.singleRow $ HD.column $ HD.custom $ \_ bs -> return bs
+    encoder = HE.param $ HE.nonNullable $ HE.int8
+    decoder = HD.singleRow $ HD.column $ HD.nonNullable $ HD.custom $ \_ bs -> return bs
 
 q2 :: T.Text
 q2 = $(FE.embedStringFile "bench/queries/allArtists.sql")
@@ -104,8 +107,8 @@ mkTx2H :: Bool -> HTx B.ByteString
 mkTx2H isPrepared =
   HT.statement () $ HS.Statement (TE.encodeUtf8 q2) encoder decoder isPrepared
   where
-    encoder = HE.unit
-    decoder = HD.singleRow $ HD.column $ HD.custom $ \_ bs -> return bs
+    encoder = HE.noParams
+    decoder = HD.singleRow $ HD.column $ HD.nonNullable $ HD.custom $ \_ bs -> return bs
 
 main :: IO ()
 main = do
