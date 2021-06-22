@@ -391,7 +391,8 @@ mkPGRetryPolicy noRetries =
     CR.limitRetriesByDelay limitDelay $
     CR.exponentialBackoff baseDelay <> CR.limitRetries noRetries
   where
-    limitDelay = 60 * 1000 * 100 -- 1 minute
+    -- limitDelay effectively clamps noRetries to <= 6
+    limitDelay = 6 * 1000 * 1000 -- 6 seconds
     baseDelay = 100 * 1000 -- 0.1 second
 
 data PGConn
