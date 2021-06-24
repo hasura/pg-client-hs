@@ -385,13 +385,13 @@ execParams conn (Template t) params = do
 
 mkPGRetryPolicy
   :: MonadIO m
-  => Int           -- ^ no.of retries
+  => Int           -- ^ number of retries
   -> PGRetryPolicyM m
-mkPGRetryPolicy noRetries =
+mkPGRetryPolicy numRetries =
     CR.limitRetriesByDelay limitDelay $
-    CR.exponentialBackoff baseDelay <> CR.limitRetries noRetries
+    CR.exponentialBackoff baseDelay <> CR.limitRetries numRetries
   where
-    -- limitDelay effectively clamps noRetries to <= 6
+    -- limitDelay effectively clamps numRetries to <= 6
     limitDelay = 6 * 1000 * 1000 -- 6 seconds
     baseDelay = 100 * 1000 -- 0.1 second
 
