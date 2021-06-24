@@ -380,9 +380,9 @@ data PGCancelErr = CEAllocate | CEError DT.Text
 
 instance Exception PGCancelErr
 
-cancelPG :: PQ.Connection -> IO (Either PGCancelErr ())
-cancelPG conn = do
-  PQ.getCancel conn >>= \case
+cancelPG :: Maybe PQ.Cancel -> IO (Either PGCancelErr ())
+cancelPG mc = do
+  case mc of
     Nothing -> return $ Left CEAllocate
     Just c  -> PQ.cancel c >>= \case
       Left err -> return $ Left $ CEError $ lenientDecodeUtf8 err
@@ -390,10 +390,13 @@ cancelPG conn = do
 
 cancelOnTimeout :: (PQ.Connection -> IO a) -> PQ.Connection -> IO a
 cancelOnTimeout f conn = do
+  mc <- PQ.getCancel conn -- FIXME handle error case here
   a <- async $ f conn
   x <- (Left <$> wait a) `catch`
+    -- FIXME handle all/some async exceptions? throw them to the async
+    --       after cancelling?
     (\(e::Timeout) -> Right <$> do
-        cancelPG conn >>= \case
+        cancelPG mc >>= \case
           Left err -> return $ Left (err, e)
           Right () -> return $ Right ())
   case x of
