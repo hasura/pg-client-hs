@@ -434,6 +434,13 @@ data PGConn
   { pgPQConn       :: !PQ.Connection
   , pgAllowPrepare :: !Bool
   , pgCancel       :: !Bool
+  -- ^ Cancel command execution when interrupted by System.Timeout.timeout.
+  --   If this happens, the action won't actually timeout, instead we wait for
+  --   postgres to respond as usual. It will respond with a "canceled" error if
+  --   the command was cancelled.
+  --   FIXME: This isn't a great API. Also, handling of other asynchronous
+  --          exceptions is likely broken at this point. Also, if the timeout
+  --          hits outside the core FFI call, we might throw away a good result.
   , pgRetryPolicy  :: !PGRetryPolicy
   , pgLogger       :: !PGLogger
   , pgCounter      :: !(IORef Word16)
