@@ -40,7 +40,7 @@ module Database.PG.Query.Connection
     ) where
 
 import           Control.Concurrent.Async
-import           Control.Exception
+import           Control.Exception.Safe
 import           Control.Monad.Except
 import           Data.Aeson
 import           Data.Aeson.Casing
@@ -53,7 +53,6 @@ import           Data.Time
 import           Data.Word
 import           GHC.Exts
 import           GHC.Generics
-import           System.Timeout
 
 import qualified Control.Retry             as CR
 import qualified Data.ByteString           as DB
@@ -380,29 +379,28 @@ data PGCancelErr = CEAllocate | CEError DT.Text
 
 instance Exception PGCancelErr
 
-cancelPG :: Maybe PQ.Cancel -> IO (Either PGCancelErr ())
-cancelPG mc = do
-  case mc of
-    Nothing -> return $ Left CEAllocate
-    Just c  -> PQ.cancel c >>= \case
-      Left err -> return $ Left $ CEError $ lenientDecodeUtf8 err
-      Right () -> return $ Right ()
+cancelPG :: PQ.Cancel -> IO ()
+cancelPG c = do
+  PQ.cancel c >>= \case
+    Left err -> throwIO $ CEError $ lenientDecodeUtf8 err
+    Right () -> pure ()
 
-cancelOnTimeout :: (PQ.Connection -> IO a) -> PQ.Connection -> IO a
-cancelOnTimeout f conn = do
-  mc <- PQ.getCancel conn -- FIXME handle error case here
-  a <- async $ f conn
-  x <- (Left <$> wait a) `catch`
-    -- FIXME handle all/some async exceptions? throw them to the async
-    --       after cancelling?
-    (\(e::Timeout) -> Right <$> do
-        cancelPG mc >>= \case
-          Left err -> return $ Left (err, e)
-          Right () -> return $ Right ())
-  case x of
-    Left res               -> return res
-    Right (Left (err, _e)) -> throwIO err -- very unclear this is correct, just want to avoid losing the error for now
-    Right (Right ())       -> wait a
+interruptible :: IO () -> IO a -> IO a
+interruptible cancel action = mask $ \restore -> do
+  a <- async action
+  res <- tryAsync $ restore (waitCatch a)
+  case res of
+    Left (e :: SomeAsyncException) -> do
+      cancelRes <- try $ cancel
+      throwTo (asyncThreadId a) e
+      r <- wait a
+      case cancelRes of
+        Left (e' :: SomeException) -> throwIO e'
+        _                          -> pure r
+    Right (Left e) ->
+      throwIO e
+    Right (Right r) ->
+      pure r
 
 -- Prevents a class of SQL injection attacks
 execParams
@@ -417,6 +415,13 @@ execParams conn (Template t) params run = do
   checkResult conn mRes
   where
     prependToTuple2 a (b, c) = (a, b, c)
+
+interruptiblePG :: (PQ.Connection -> IO a) -> PQ.Connection -> IO a
+interruptiblePG f conn = do
+  c <- PQ.getCancel conn >>= \case
+    Nothing -> throwIO $ CEAllocate
+    Just c  -> pure c
+  interruptible (cancelPG c) (f conn)
 
 mkPGRetryPolicy
   :: MonadIO m
@@ -547,11 +552,11 @@ execQuery pgConn pgQuery = do
   where
     PGConn conn allowPrepare cancelable _ _ _ _ _ _ = pgConn
     PGQuery t params preparable convF = pgQuery
-    withoutPrepare = execParams conn t params (bool id cancelOnTimeout cancelable)
+    withoutPrepare = execParams conn t params (bool id interruptiblePG cancelable)
     withPrepare = do
       let (tl, vl) = unzip params
       rk <- prepare pgConn t tl
-      execPrepared conn vl rk (bool id cancelOnTimeout cancelable)
+      execPrepared conn vl rk (bool id interruptiblePG cancelable)
 
 {-# INLINE execMulti #-}
 execMulti
