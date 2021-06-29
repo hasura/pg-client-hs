@@ -11,6 +11,7 @@ import           Test.Hspec
 import           Database.PG.Query
 
 import           Timeout               (specTimeout)
+import Interruptible (specInterruptible)
 
 import           Control.Concurrent    (forkIO, threadDelay)
 import           Control.Monad.Except  (MonadTrans (lift), runExceptT)
@@ -43,6 +44,7 @@ main = hspec $ do
     it "time out works correctly" do
       releaseAndAcquireWithTimeoutNegative `shouldReturn` Nothing
   specTimeout
+  specInterruptible
 
 mkPool :: IO PGPool
 mkPool = do
