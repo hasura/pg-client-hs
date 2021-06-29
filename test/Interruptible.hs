@@ -5,13 +5,16 @@
 
 module Interruptible (specInterruptible) where
 
-import Control.Concurrent.Async (async, race_, asyncThreadId, wait, waitCatch)
-import Control.Concurrent (MVar, newEmptyMVar, readMVar, tryReadMVar, putMVar, threadDelay)
-import Control.Exception.Safe (finally, try, throwString, isAsyncException, throwIO, throwTo, catchAsync, uninterruptibleMask_, mask, SomeException, tryAsync)
-import System.Timeout (timeout)
+import           Control.Concurrent       (MVar, newEmptyMVar, putMVar, readMVar, threadDelay,
+                                           tryReadMVar)
+import           Control.Concurrent.Async (async, asyncThreadId, race_, wait, waitCatch)
+import           Control.Exception.Safe   (SomeException, catchAsync, finally, isAsyncException,
+                                           mask, throwIO, throwString, throwTo, try, tryAsync,
+                                           uninterruptibleMask_)
 import           Data.Time                (diffUTCTime, getCurrentTime)
+import           System.Timeout           (timeout)
 
-import Test.Hspec
+import           Test.Hspec
 
 sleep :: Int -> IO Int
 sleep n = threadDelay (n * 1000000) >> pure n
@@ -19,7 +22,7 @@ sleep n = threadDelay (n * 1000000) >> pure n
 data CancellableIO a =
   CancellableIO
   { cancel :: IO ()
-  , run :: IO a
+  , run    :: IO a
   }
 
 --instance Functor CancellableIO where
@@ -100,7 +103,7 @@ interruptible' x = mask $ \restore -> do
         r <- wait a -- FIXME masked, but what do we want to do if we receive a second async exception?
         case cancelRes of
           Left (e :: SomeException) -> throwIO e
-          _      -> pure r
+          _                         -> pure r
       else do
         putStrLn "impossible: non-async exception on waitCatch"
         throwIO e

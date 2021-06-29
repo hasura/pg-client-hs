@@ -10,8 +10,8 @@ import           Test.Hspec
 
 import           Database.PG.Query
 
+import           Interruptible         (specInterruptible)
 import           Timeout               (specTimeout)
-import Interruptible (specInterruptible)
 
 import           Control.Concurrent    (forkIO, threadDelay)
 import           Control.Monad.Except  (MonadTrans (lift), runExceptT)
