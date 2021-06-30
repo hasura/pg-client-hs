@@ -5,143 +5,207 @@
 
 module Interruptible (specInterruptible) where
 
-import           Control.Concurrent       (MVar, newEmptyMVar, putMVar, readMVar, threadDelay,
-                                           tryReadMVar)
-import           Control.Concurrent.Async (async, asyncThreadId, race_, wait, waitCatch)
-import           Control.Exception.Safe   (SomeException, catchAsync, finally, isAsyncException,
-                                           mask, throwIO, throwString, throwTo, try, tryAsync,
-                                           uninterruptibleMask_)
-import           Data.Time                (diffUTCTime, getCurrentTime)
-import           System.Timeout           (timeout)
+import           Control.Concurrent               (MVar, newEmptyMVar, putMVar, threadDelay,
+                                                   tryReadMVar)
+import           Control.Exception.Safe
+import           Control.Monad                    (liftM2, when)
+import           Data.IORef
+import           Data.Time                        (NominalDiffTime, diffUTCTime, getCurrentTime)
+import           Prelude                          hiding (log)
+import           System.Timeout                   (timeout)
 
 import           Test.Hspec
 
-sleep :: Int -> IO Int
-sleep n = threadDelay (n * 1000000) >> pure n
+import           Control.Concurrent.Interruptible (interruptible)
 
-data CancellableIO a =
-  CancellableIO
-  { cancel :: IO ()
-  , run    :: IO a
-  }
+-- millisecond in microseconds
+ms :: Int
+ms = 1000
 
---instance Functor CancellableIO where
---  fmap f (CancellableIO {cancel, run}) = CancellableIO cancel (fmap f run)
+-- second in microseconds
+s :: Int
+s = 1000000
 
-mapAction :: (IO a -> IO a) -> CancellableIO a -> CancellableIO a
-mapAction f (CancellableIO {cancel, run}) = CancellableIO { cancel = cancel, run = f run }
+sleep :: Int -> IO ()
+sleep = threadDelay
 
-mapCancel :: (IO () -> IO ()) -> CancellableIO a -> CancellableIO a
-mapCancel f (CancellableIO {cancel, run}) = CancellableIO { cancel = f cancel, run = run }
-
-unint :: CancellableIO a -> CancellableIO a
-unint = mapAction (\a -> uninterruptibleMask_ a >>= \r -> threadDelay 1000 >> pure r)
-
-cancellableMVar :: IO a -> IO (CancellableIO ())
-cancellableMVar x = do
-  c :: MVar () <- newEmptyMVar
-  return $ CancellableIO (putMVar c ()) (race_ (readMVar c >> putStrLn "got mvar") x)
-
-cancellableMVarNorace :: IO a -> IO (CancellableIO ())
-cancellableMVarNorace x = do -- XXXXXXX this doesn't actually call X anymore
-  c :: MVar () <- newEmptyMVar
-  return $ CancellableIO (putMVar c ()) (loop c x)
+cancellableSleep :: Int -> IO Bool -> IO ()
+cancellableSleep t cancelled = do
+  t0 <- getCurrentTime
+  let
+    done = do
+      t1 <- getCurrentTime
+      return $ diffUTCTime t1 t0 * fromIntegral s >= fromIntegral t
+  spinUntil (liftM2 (||) done cancelled)
   where
-    loop c x = tryReadMVar c >>= \case
-      Just _ -> return ()
-      Nothing -> do
-        threadDelay 100
-        loop c x
+    spinUntil cond = do
+      stop <- cond
+      when (not stop) $ do
+        threadDelay (1 * ms)
+        spinUntil cond
 
-cancellableSleep :: Int -> IO (CancellableIO ())
-cancellableSleep n = do -- XXXXXXX this doesn't actually call X anymore
+getCancel :: IO (IO (), IO Bool)
+getCancel = do
   c :: MVar () <- newEmptyMVar
-  return $ CancellableIO (putMVar c ()) (action c)
-  where
-    action c = do
-      t0 <- getCurrentTime
-      loop t0 c
-    loop t0 c = tryReadMVar c >>= \case
-      Just _ -> return ()
-      Nothing -> do
-        t <- getCurrentTime
-        if diffUTCTime t t0 >= fromIntegral n then
-          return ()
-        else do
-          threadDelay 100
-          loop t0 c
+  let cancel    = putMVar c ()
+      cancelled = maybe False (const True) <$> tryReadMVar c
+  return (cancel, cancelled)
 
-interruptible :: CancellableIO a -> IO a
-interruptible x = mask $ \restore -> do
-  a <- async (run x)
-  restore (wait a >> pure ()) `catchAsync`
-    (\(e::SomeException) -> do
-           putStrLn $ "caught exception"
-           if isAsyncException e then do
-             cancel x -- FIXME what if this throws?
-             putStrLn "canceled from outside"
-             throwTo (asyncThreadId a) e
-           else
-             throwIO e)
-  wait a
+data CancelException = CancelException
+  deriving (Show, Eq)
 
-async' x = async $ x `finally` putStrLn "async exited"
+instance Exception CancelException
 
-interruptible' :: CancellableIO a -> IO a
-interruptible' x = mask $ \restore -> do
-  a <- async' (run x)
-  res <- tryAsync $ restore (waitCatch a)
-  case res of
-    Left (e :: SomeException) -> do  -- FIXME we could directly go for SomeAsyncException and avoid impossible below
-      putStrLn $ "caught exception"
-      if isAsyncException e then do
-        putStrLn $ "external async exception"
-        -- if cancelling failed, we want to pass on that exception, but still collect our spawned thread
-        cancelRes <- try $ cancel x -- FIXME what if this throws? / fails?
-        putStrLn "canceled from outside"
-        throwTo (asyncThreadId a) e
-        r <- wait a -- FIXME masked, but what do we want to do if we receive a second async exception?
-        case cancelRes of
-          Left (e :: SomeException) -> throwIO e
-          _                         -> pure r
-      else do
-        putStrLn "impossible: non-async exception on waitCatch"
-        throwIO e
-    Right (Left e) ->
-      throwIO e
-    Right (Right r) ->
-      pure r
+data ActionException = ActionException
+  deriving (Show, Eq)
+
+instance Exception ActionException
+
+type Log = [(NominalDiffTime, String)]
+
+roundTo :: Int -> NominalDiffTime -> Int
+roundTo interval t = round (t * fromIntegral s / fromIntegral interval) * interval
+
+roundLog :: Int -> Log -> [(Int, String)]
+roundLog interval events = map (\(t,e) -> (roundTo interval t, e)) events
+
+withLogger :: ((String -> IO ()) -> IO ()) -> IO Log
+withLogger f = do
+  ref :: IORef Log <- newIORef []
+  t0 <- getCurrentTime
+  let
+    log event = do
+      t <- getCurrentTime
+      atomicModifyIORef' ref (\events -> ((diffUTCTime t t0, event):events, ()))
+  f log
+  reverse <$> readIORef ref
+
+trace :: (String -> IO ()) -> String -> IO () -> IO ()
+trace log label action = do
+  log $ label <> " start"
+  action `onException` (log $ label <> " exception")
+  log $ label <> " end"
 
 specInterruptible :: SpecWith ()
 specInterruptible = do
+  describe "without interruptible" $ do
+    it "logging etc works" $ do
+      events <- withLogger $ \log -> do
+        let action = trace log "sleep" $ sleep (1000 * ms)
+        res <- timeout (500 * ms) action
+        log "done"
+        res `shouldBe` Nothing
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "sleep start")
+        , (500 * ms, "sleep exception")
+        , (500 * ms, "done")
+        ]
+    it "cancellable sleep is like sleep without cancelling" $ do
+      events <- withLogger $ \log -> do
+        let action = trace log "sleep" $ cancellableSleep (1000 * ms) (pure False)
+        res <- timeout (500 * ms) action
+        log "done"
+        res `shouldBe` Nothing
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "sleep start")
+        , (500 * ms, "sleep exception")
+        , (500 * ms, "done")
+        ]
+    it "uninterruptible sleep doesn't time out" $ do
+      events <- withLogger $ \log -> do
+        let
+          action = trace log "outer" $ do
+            uninterruptibleMask_ $ trace log "sleep" $ cancellableSleep (1000 * ms) (pure False)
+            -- add an extra action so the timeout is delivered reliably
+            sleep (500 * ms)
+        res <- timeout (500 * ms) action
+        log "done"
+        res `shouldBe` Nothing
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "outer start")
+        , (0, "sleep start")
+        , (1000 * ms, "sleep end")
+        , (1000 * ms, "outer exception")
+        , (1000 * ms, "done")
+        ]
+
   describe "interruptible" $ do
-    it "interrupts an uninterruptible sleep via cancel" $ do
-      x <- cancellableSleep 2
-      let x' = unint x
-      t0 <- getCurrentTime
-      res <- timeout 500000 $ interruptible x'
-      t1 <- getCurrentTime
-      res `shouldBe` Nothing
-      -- promptly
-      diffUTCTime t1 t0 `shouldSatisfy` (\d -> d >= 0.5 && d < 0.75)
-
-  describe "interruptible'" $ do
-    it "interrupts an uninterruptible sleep via cancel" $ do
-      x <- cancellableSleep 2
-      let x' = unint x
-      t0 <- getCurrentTime
-      res <- timeout 500000 $ interruptible' x'
-      t1 <- getCurrentTime
-      res `shouldBe` Nothing
-      -- promptly
-      diffUTCTime t1 t0 `shouldSatisfy` (\d -> d >= 0.5 && d < 0.75)
-
-    it "doesn't interrupt when cancel only throws, but still collects the async" $ do
-      x <- cancellableSleep 2
-      let x' = mapCancel (const $ throwString "cancel exception") $ unint x
-      t0 <- getCurrentTime
-      res <- timeout 500000 $ interruptible' x'
-      t1 <- getCurrentTime
-      res `shouldBe` Nothing
-      -- promptly
-      diffUTCTime t1 t0 `shouldSatisfy` (\d -> d >= 2 && d < 2.25)
+    it "behaves like baseline without cancelling" $ do
+      events <- withLogger $ \log -> do
+        let action = interruptible (pure ()) $ trace log "sleep" $ sleep (1000 * ms)
+        res <- timeout (500 * ms) action
+        log "done"
+        res `shouldBe` Nothing
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "sleep start")
+        , (500 * ms, "sleep exception")
+        , (500 * ms, "done")
+        ]
+    it "allows interrupting a blocking action" $ do
+      (cancel, cancelled) <- getCancel
+      events <- withLogger $ \log -> do
+        let
+          action = trace log "outer" $ do
+            interruptible cancel $ uninterruptibleMask_ $ trace log "sleep" $ cancellableSleep (1000 * ms) cancelled
+        res <- timeout (500 * ms) action
+        log "done"
+        res `shouldBe` Nothing
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "outer start")
+        , (0, "sleep start")
+        , (500 * ms, "sleep end")
+        , (500 * ms, "outer exception")
+        , (500 * ms, "done")
+        ]
+    it "waits for the thread and bubbles the exception if cancel only throws" $ do
+      (_cancel, cancelled) <- getCancel
+      let cancel = throwIO CancelException
+      events <- withLogger $ \log -> do
+        let
+          action = trace log "outer" $ do
+            interruptible cancel $ uninterruptibleMask_ $ trace log "sleep" $ cancellableSleep (1000 * ms) cancelled
+        timeout (500 * ms) action `shouldThrow` (== CancelException)
+        log "done"
+      -- the important property is that we always get "sleep"'s end/exception before "outer"'s end/exception
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "outer start")
+        , (0, "sleep start")
+        , (1000 * ms, "sleep end")
+        , (1000 * ms, "outer exception")
+        , (1000 * ms, "done")
+        ]
+    it "bubbles an exception that occurs before cancelling" $ do
+      (cancel, cancelled) <- getCancel
+      events <- withLogger $ \log -> do
+        let
+          action = trace log "outer" $ do
+            interruptible cancel $ uninterruptibleMask_ $ trace log "sleep" $ do
+              sleep (200 * ms)
+              throwIO ActionException :: IO ()
+              cancellableSleep (800 * ms) cancelled
+        timeout (500 * ms) action `shouldThrow` (== ActionException)
+        log "done"
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "outer start")
+        , (0, "sleep start")
+        , (200 * ms, "sleep exception")
+        , (200 * ms, "outer exception")
+        , (200 * ms, "done")
+        ]
+    it "bubbles an exception that occurs after cancelling" $ do
+      (cancel, cancelled) <- getCancel
+      events <- withLogger $ \log -> do
+        let
+          action = trace log "outer" $ do
+            interruptible cancel $ uninterruptibleMask_ $ trace log "sleep" $ do
+              cancellableSleep (1000 * ms) cancelled
+              throwIO ActionException
+        timeout (500 * ms) action `shouldThrow` (== ActionException)
+        log "done"
+      roundLog (100 * ms) events `shouldBe`
+        [ (0, "outer start")
+        , (0, "sleep start")
+        , (500 * ms, "sleep exception")
+        , (500 * ms, "outer exception")
+        , (500 * ms, "done")
+        ]
