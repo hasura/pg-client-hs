@@ -32,8 +32,8 @@ library
                      , Database.PG.Query.Transaction
                      , Database.PG.Query.Pool
                      , Database.PG.Query.Listen
-  other-modules:       Database.PG.ExtraBindings
                      , Control.Concurrent.Interruptible
+  other-modules:       Database.PG.ExtraBindings
 
   build-depends:       base >= 4.7 && < 5
                      , attoparsec >= 0.13
