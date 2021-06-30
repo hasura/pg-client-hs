@@ -1,7 +1,9 @@
 {-# LANGUAGE DeriveGeneric              #-}
 {-# LANGUAGE FlexibleContexts           #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase                 #-}
 {-# LANGUAGE OverloadedStrings          #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 {-# LANGUAGE TemplateHaskell            #-}
 {-# LANGUAGE TupleSections              #-}
 
@@ -37,7 +39,8 @@ module Database.PG.Query.Connection
     , PGStmtErrDetail(..)
     ) where
 
-import           Control.Exception
+import           Control.Concurrent.Interruptible (interruptible)
+import           Control.Exception.Safe           (Exception, throwIO)
 import           Control.Monad.Except
 import           Data.Aeson
 import           Data.Aeson.Casing
@@ -51,15 +54,15 @@ import           Data.Word
 import           GHC.Exts
 import           GHC.Generics
 
-import qualified Control.Retry             as CR
-import qualified Data.ByteString           as DB
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.ByteString.Lazy      as BL
-import qualified Data.HashTable.IO         as HI
-import qualified Data.Text                 as DT
-import qualified Data.Text.Encoding        as TE
-import qualified Data.Text.Encoding.Error  as TE
-import qualified Database.PostgreSQL.LibPQ as PQ
+import qualified Control.Retry                    as CR
+import qualified Data.ByteString                  as DB
+import qualified Data.ByteString.Builder          as BB
+import qualified Data.ByteString.Lazy             as BL
+import qualified Data.HashTable.IO                as HI
+import qualified Data.Text                        as DT
+import qualified Data.Text.Encoding               as TE
+import qualified Data.Text.Encoding.Error         as TE
+import qualified Database.PostgreSQL.LibPQ        as PQ
 
 data ConnOptions
   = ConnOptions
@@ -280,7 +283,7 @@ retryOnConnErr pgConn action =
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
-    PGConn _ _ retryP logger _ _ _ _ = pgConn
+    PGConn _ _ _ retryP logger _ _ _ _ = pgConn
 
 checkResult
   :: PQ.Connection
@@ -365,23 +368,43 @@ execPrepared
   :: PQ.Connection                -- ^ connection
   -> [Maybe (DB.ByteString, PQ.Format)]           -- ^ parameters
   -> RemoteKey                    -- ^ stmtName
+  -> ((PQ.Connection -> IO (Maybe PQ.Result)) -> PQ.Connection -> IO (Maybe PQ.Result))
   -> PGExec ResultOk -- ^ result
-execPrepared conn args n = do
-  mRes <- lift $ PQ.execPrepared conn n args PQ.Binary
+execPrepared conn args n run = do
+  mRes <- lift $ run (\c -> PQ.execPrepared c n args PQ.Binary) conn
   checkResult conn mRes
+
+data PGCancelErr = CEAllocate | CEError DT.Text
+  deriving (Show, Eq)
+
+instance Exception PGCancelErr
+
+cancelPG :: PQ.Cancel -> IO ()
+cancelPG c = do
+  PQ.cancel c >>= \case
+    Left err -> throwIO $ CEError $ lenientDecodeUtf8 err
+    Right () -> pure ()
 
 -- Prevents a class of SQL injection attacks
 execParams
   :: PQ.Connection                 -- ^ connection
   -> Template                      -- ^ statement
   -> [(PQ.Oid, Maybe (DB.ByteString, PQ.Format))]  -- ^ parameters
+  -> ((PQ.Connection -> IO (Maybe PQ.Result)) -> PQ.Connection -> IO (Maybe PQ.Result))
   -> PGExec ResultOk  -- ^ result
-execParams conn (Template t) params = do
+execParams conn (Template t) params run = do
   let params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
-  mRes <- lift $ PQ.execParams conn t params' PQ.Binary
+  mRes <- lift $ run (\c -> PQ.execParams c t params' PQ.Binary) conn
   checkResult conn mRes
   where
     prependToTuple2 a (b, c) = (a, b, c)
+
+interruptiblePG :: (PQ.Connection -> IO a) -> PQ.Connection -> IO a
+interruptiblePG f conn = do
+  c <- PQ.getCancel conn >>= \case
+    Nothing -> throwIO $ CEAllocate
+    Just c  -> pure c
+  interruptible (cancelPG c) (f conn)
 
 mkPGRetryPolicy
   :: MonadIO m
@@ -399,6 +422,14 @@ data PGConn
   = PGConn
   { pgPQConn       :: !PQ.Connection
   , pgAllowPrepare :: !Bool
+  , pgCancel       :: !Bool
+  -- ^ Cancel command execution when interrupted by System.Timeout.timeout.
+  --   If this happens, the action won't actually timeout, instead we wait for
+  --   postgres to respond as usual. It will respond with a "canceled" error if
+  --   the command was cancelled.
+  --   FIXME: This isn't a great API. Also, handling of other asynchronous
+  --          exceptions is likely broken at this point. Also, if the timeout
+  --          hits outside the core FFI call, we might throw away a good result.
   , pgRetryPolicy  :: !PGRetryPolicy
   , pgLogger       :: !PGLogger
   , pgCounter      :: !(IORef Word16)
@@ -409,7 +440,7 @@ data PGConn
   }
 
 resetPGConn :: PGConn -> IO ()
-resetPGConn (PGConn conn _ _ _ ctr ht _ _) = do
+resetPGConn (PGConn conn _ _ _ _ ctr ht _ _) = do
   -- Reset LibPQ connection
   PQ.reset conn
   -- Set counter to 0
@@ -454,7 +485,7 @@ prepare
   -> Template
   -> [PQ.Oid]
   -> PGExec RemoteKey
-prepare (PGConn conn _ _ _ counter table _ _) t tl = do
+prepare (PGConn conn _ _ _ _ counter table _ _) t tl = do
   let lk      = localKey t tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
@@ -503,13 +534,13 @@ execQuery pgConn pgQuery = do
     bool withoutPrepare withPrepare $ allowPrepare && preparable
   withExceptT PGIUnexpected $ convF resOk
   where
-    PGConn conn allowPrepare _ _ _ _ _ _ = pgConn
+    PGConn conn allowPrepare cancelable _ _ _ _ _ _ = pgConn
     PGQuery t params preparable convF = pgQuery
-    withoutPrepare = execParams conn t params
+    withoutPrepare = execParams conn t params (bool id interruptiblePG cancelable)
     withPrepare = do
       let (tl, vl) = unzip params
       rk <- prepare pgConn t tl
-      execPrepared conn vl rk
+      execPrepared conn vl rk (bool id interruptiblePG cancelable)
 
 {-# INLINE execMulti #-}
 execMulti

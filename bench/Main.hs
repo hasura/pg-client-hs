@@ -74,7 +74,7 @@ getPoolC = do
                     , Q.connOptions = Nothing
                     }
       connInfo = Q.ConnInfo 0 connDetails
-      connParams = Q.ConnParams 1 1 180 False Nothing Nothing
+      connParams = Q.ConnParams 1 1 180 False Nothing Nothing False
       logger     = const (return ())
   Q.initPGPool connInfo connParams logger
 

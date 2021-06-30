@@ -10,6 +10,9 @@ import           Test.Hspec
 
 import           Database.PG.Query
 
+import           Interruptible         (specInterruptible)
+import           Timeout               (specTimeout)
+
 import           Control.Concurrent    (forkIO, threadDelay)
 import           Control.Monad.Except  (MonadTrans (lift), runExceptT)
 
@@ -40,6 +43,8 @@ main = hspec $ do
       releaseAndAcquireWithTimeout `shouldReturn` Nothing
     it "time out works correctly" do
       releaseAndAcquireWithTimeoutNegative `shouldReturn` Nothing
+  specTimeout
+  specInterruptible
 
 mkPool :: IO PGPool
 mkPool = do
@@ -50,7 +55,7 @@ mkPool = do
     ciRetries = 0
     mkDetails = CDDatabaseURI
     logger = mempty
-    connParams = ConnParams 1 1 60 True Nothing (Just 3)
+    connParams = ConnParams 1 1 60 True Nothing (Just 3) False
 
 withFreshPool :: (FromPGTxErr e, FromPGConnErr e) => PGPool -> IO a -> IO (Either e a)
 withFreshPool pool action =
@@ -113,4 +118,3 @@ releaseAndAcquireWithTimeoutNegative = do
   withFreshPool pool nada >>= \case
     Left (_ :: PGExecErr) -> mempty
     Right _               -> err "Wat"
-
