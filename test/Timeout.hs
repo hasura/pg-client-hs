@@ -40,7 +40,7 @@ specTimeout = before initDB $ do
       res `shouldBe` Nothing
       -- but still took the full second
       diffUTCTime t1 t0 `shouldSatisfy` (\x -> x >= 1 && x < 2)
-      -- insert was rolled back (FIXME this is not guaranteed if timeout hits late)
+      -- insert was rolled back (FIXME only because we know the timeout hits mid-query)
       countRows pool `shouldReturn` 0
     it "is not rolled back with async" $ \pool -> do
       countRows pool `shouldReturn` 0
@@ -61,13 +61,10 @@ specTimeout = before initDB $ do
       t0 <- getCurrentTime
       res <- timeout 500000 $ sleepyInsert cancelablePool 1
       t1 <- getCurrentTime
-      -- didn't time out, instead returned properly with a cancel error
-      res `shouldSatisfy` (\case
-        Just (Left err) -> isCancelErr err
-        _               -> False)
+      res `shouldBe` Nothing
       -- promptly
       diffUTCTime t1 t0 `shouldSatisfy` (\x -> x >= 0.5 && x < 0.75)
-      -- insert was rolled back (FIXME not guaranteed)
+      -- insert was rolled back (FIXME only because we know the timeout hits mid-query)
       countRows pool `shouldReturn` 0
 
 mkPool :: Bool -> IO PGPool
