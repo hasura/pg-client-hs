@@ -116,8 +116,8 @@ initPGPool ci cp logger = do
       createdAt <- getCurrentTime
       pqConn  <- initPQConn ci logger
       connAcquiredAt <- getCurrentTime
-      let connAcquiredMillis = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
-      EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMillis
+      let connAcquiredMicroseconds = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
+      EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMicroseconds
       ctr     <- newIORef 0
       table   <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
@@ -295,8 +295,8 @@ withExpiringPGconn pool f = do
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
     RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
       now <- liftIO getCurrentTime
-      let millis = realToFrac (1000000 * diffUTCTime now old)
-      liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) millis)
+      let microseconds = realToFrac (1000000 * diffUTCTime now old)
+      liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) microseconds)
       let connectionStale =
             maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
