@@ -67,6 +67,7 @@ test-suite pg-client-test
   hs-source-dirs:      test
   main-is:             Spec.hs
   other-modules:       Interrupt
+                     , Timeout
   build-depends:       base
                      , pg-client
                      , bytestring >= 0.10

@@ -83,12 +83,14 @@ data ConnParams = ConnParams
     -- | If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
     cpMbLifetime :: !(Maybe NominalDiffTime),
     -- | If passed, 'withConnection' will throw a 'TimeoutException' after 'timeout' seconds.
-    cpTimeout :: !(Maybe NominalDiffTime)
+    cpTimeout :: !(Maybe NominalDiffTime),
+    -- | Transactions will be cancelled if an asynchronous exception is received.
+    cpCancel :: !Bool
   }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
-defaultConnParams = ConnParams 1 20 60 True Nothing Nothing
+defaultConnParams = ConnParams 1 20 60 True Nothing Nothing True
 
 initPGPoolStats :: IO PGPoolStats
 initPGPoolStats = do
@@ -118,7 +120,7 @@ initPGPool ci cp logger = do
       EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMicroseconds
       ctr <- newIORef 0
       table <- HI.new
-      return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
+      return $ PGConn pqConn (cpAllowPrepare cp) (cpCancel cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
     diffTime = fromIntegral $ cpIdleTime cp
 
