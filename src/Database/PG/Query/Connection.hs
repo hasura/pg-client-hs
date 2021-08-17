@@ -27,12 +27,9 @@ module Database.PG.Query.Connection
     , mkTemplate
     , PrepArg
     , prepare
-    , execPrepared
     , execMulti
-    , execParams
     , execCmd
     , execQuery
-    , toByteString
     , lenientDecodeUtf8
     , PGErrInternal(..)
     , PGStmtErrDetail(..)
@@ -178,7 +175,7 @@ initPQConn ci logger =
 
     whenSerVerOk conn = do
       -- Set some parameters and check the response
-      mRes <- PQ.exec conn $ toByteString $ mconcat
+      mRes <- PQ.exec conn $ BL.toStrict $ BB.toLazyByteString $ mconcat
               [ BB.string7 "SET client_encoding = 'UTF8';"
               , BB.string7 "SET client_min_messages TO WARNING;"
               ]
@@ -191,10 +188,6 @@ initPQConn ci logger =
                             PGConnErr "unexpected status after setting params"
         Nothing  -> return $ Left $
                     PGConnErr "unexpected result after setting params"
-
-{-# INLINE toByteString #-}
-toByteString :: BB.Builder -> DB.ByteString
-toByteString = BL.toStrict . BB.toLazyByteString
 
 defaultConnInfo :: ConnInfo
 defaultConnInfo = ConnInfo 0 details
@@ -347,41 +340,6 @@ assertResCmd conn mRes = do
     checkResOk (ResultOkData _) = throwPGIntErr $
       PGIUnexpected "cmd expected; tuples found"
 
--- These are convenient wrappers around LibPQ's similar functions
-{-# INLINE prepare' #-}
-prepare'
-  :: PQ.Connection  -- ^ connection
-  -> RemoteKey      -- ^ stmtName
-  -> Template       -- ^ query
-  -> [PQ.Oid]       -- ^ paramTypes
-  -> PGExec ()      -- ^ result
-prepare' conn rk (Template t) ol = do
-  mRes <- liftIO $ PQ.prepare conn rk t $ Just ol
-  assertResCmd conn mRes
-
-{-# INLINE execPrepared #-}
-execPrepared
-  :: PQ.Connection                -- ^ connection
-  -> [Maybe (DB.ByteString, PQ.Format)]           -- ^ parameters
-  -> RemoteKey                    -- ^ stmtName
-  -> PGExec ResultOk -- ^ result
-execPrepared conn args n = do
-  mRes <- lift $ PQ.execPrepared conn n args PQ.Binary
-  checkResult conn mRes
-
--- Prevents a class of SQL injection attacks
-execParams
-  :: PQ.Connection                 -- ^ connection
-  -> Template                      -- ^ statement
-  -> [(PQ.Oid, Maybe (DB.ByteString, PQ.Format))]  -- ^ parameters
-  -> PGExec ResultOk  -- ^ result
-execParams conn (Template t) params = do
-  let params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
-  mRes <- lift $ PQ.execParams conn t params' PQ.Binary
-  checkResult conn mRes
-  where
-    prependToTuple2 a (b, c) = (a, b, c)
-
 mkPGRetryPolicy
   :: MonadIO m
   => Int           -- ^ number of retries
@@ -453,8 +411,8 @@ prepare
   -> Template
   -> [PQ.Oid]
   -> PGExec RemoteKey
-prepare (PGConn conn _ _ _ counter table _ _) t tl = do
-  let lk      = localKey t tl
+prepare (PGConn conn _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
+  let lk      = localKey tpl tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
     -- Already prepared
@@ -465,7 +423,8 @@ prepare (PGConn conn _ _ _ counter table _ _) t tl = do
       -- Create a new unique remote key
       let rk = fromString $ show w
       -- prepare the statement
-      prepare' conn rk t tl
+      mRes <- lift $ PQ.prepare conn rk tplBytes $ Just tl
+      assertResCmd conn mRes
       lift $ do
         -- Insert into table
         HI.insert table lk rk
@@ -503,12 +462,17 @@ execQuery pgConn pgQuery = do
   withExceptT PGIUnexpected $ convF resOk
   where
     PGConn conn allowPrepare _ _ _ _ _ _ = pgConn
-    PGQuery t params preparable convF = pgQuery
-    withoutPrepare = execParams conn t params
+    PGQuery tpl@(Template tplBytes) params preparable convF = pgQuery
+    withoutPrepare = do
+      let prependToTuple2 a (b, c) = (a, b, c)
+          params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
+      mRes <- lift $ PQ.execParams conn tplBytes params' PQ.Binary
+      checkResult conn mRes
     withPrepare = do
       let (tl, vl) = unzip params
-      rk <- prepare pgConn t tl
-      execPrepared conn vl rk
+      rk <- prepare pgConn tpl tl
+      mRes <- lift $ PQ.execPrepared conn rk vl PQ.Binary
+      checkResult conn mRes
 
 {-# INLINE execMulti #-}
 execMulti
