@@ -21,7 +21,6 @@ module Database.PG.Query.Pool
   , commitTx
   , runTx
   , runTx'
-  , runTxOnConn
   , catchConnErr
   , sql
   , sqlFromFile
@@ -167,12 +166,11 @@ class FromPGTxErr e where
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
-runTxOnConn :: (MonadIO m, FromPGTxErr e)
-            => PGConn
-            -> TxMode
-            -> (PGConn -> ExceptT e m a)
-            -> ExceptT e m a
-runTxOnConn pgConn txm f = do
+asTransaction :: (MonadIO m, FromPGTxErr e)
+              => TxMode
+              -> (PGConn -> ExceptT e m a)
+              -> PGConn -> ExceptT e m a
+asTransaction txm f pgConn = do
   -- Begin the transaction. If there is an error, you shouldn't call abort
   withExceptT fromPGTxErr $ execTx pgConn $ beginTx txm
   -- Run the actual transaction and commit. If there is an error, abort
@@ -185,7 +183,7 @@ runTxOnConn pgConn txm f = do
       withExceptT fromPGTxErr $ execTx pgConn abortTx
       throwError e
 
--- | Run a transaction using the postgres pool.
+-- | Run a command using the postgres pool.
 --
 -- Catches postgres exceptions and converts them to 'e', including
 -- 'TimeoutException's thrown in case the timeout is set and reached.
@@ -195,14 +193,10 @@ withConn :: ( MonadIO m
             , FromPGConnErr e
             )
          => PGPool
-         -> TxMode
          -> (PGConn -> ExceptT e m a)
          -> ExceptT e m a
-withConn pool txm f =
-  catchConnErr action
-  where
-    action  = withExpiringPGconn pool $
-             \connRsrc -> runTxOnConn connRsrc txm f
+withConn pool f =
+  catchConnErr $ withExpiringPGconn pool f
 
 catchConnErr :: forall e m a
               . (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
@@ -228,6 +222,7 @@ mkConnExHandler :: (MonadError e m)
                 -> (PGConnErr -> m a)
 mkConnExHandler _ ef = throwError . ef
 
+-- | Run a command on the given pool wrapped in a transaction.
 runTx :: ( MonadIO m
          , MonadBaseControl IO m
          , FromPGTxErr e
@@ -235,11 +230,12 @@ runTx :: ( MonadIO m
          )
       => PGPool
       -> TxMode
-      -> TxET e m a
+      -> TxET e m a -- ^ the command to run
       -> ExceptT e m a
 runTx pool txm tx = do
-  withConn pool txm $ \connRsrc -> execTx connRsrc tx
+  withConn pool $ asTransaction txm $ \connRsrc -> execTx connRsrc tx
 
+-- | Run a command on the given pool without wrapping in a transaction.
 runTx' :: ( MonadIO m
           , MonadBaseControl IO m
           , FromPGTxErr e
@@ -249,8 +245,7 @@ runTx' :: ( MonadIO m
        -> TxET e m a
        -> ExceptT e m a
 runTx' pool tx = do
-  catchConnErr $
-    withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
+  withConn pool $ \connRsrc -> execTx connRsrc tx
 
 sql :: QuasiQuoter
 sql = QuasiQuoter { quoteExp = \a -> [|fromString a|] }
