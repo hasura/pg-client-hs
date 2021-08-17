@@ -55,7 +55,7 @@ mkPool = do
 withFreshPool :: (FromPGTxErr e, FromPGConnErr e) => PGPool -> IO a -> IO (Either e a)
 withFreshPool pool action =
   runExceptT
-    . withConn pool (ReadCommitted, Just ReadOnly)
+    . withConn pool
     . const $ lift action
 
 err :: Show a => a -> IO (Maybe String)
