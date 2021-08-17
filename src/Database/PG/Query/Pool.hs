@@ -16,7 +16,6 @@ module Database.PG.Query.Pool
   , initPGPool
   , destroyPGPool
   , withConn
-  , runTxOnConn'
   , beginTx
   , abortTx
   , commitTx
@@ -239,7 +238,7 @@ runTx :: ( MonadIO m
       -> TxET e m a
       -> ExceptT e m a
 runTx pool txm tx = do
-  withConn pool txm $ \connRsrc -> runTxOnConn' connRsrc tx
+  withConn pool txm $ \connRsrc -> execTx connRsrc tx
 
 runTx' :: ( MonadIO m
           , MonadBaseControl IO m
@@ -252,11 +251,6 @@ runTx' :: ( MonadIO m
 runTx' pool tx = do
   catchConnErr $
     withExpiringPGconn pool $ \connRsrc -> execTx connRsrc tx
-
-runTxOnConn' :: PGConn
-             -> TxET e m a
-             -> ExceptT e m a
-runTxOnConn' = execTx
 
 sql :: QuasiQuoter
 sql = QuasiQuoter { quoteExp = \a -> [|fromString a|] }
