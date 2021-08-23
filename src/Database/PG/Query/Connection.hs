@@ -114,6 +114,11 @@ throwPGConnErr
   :: MonadError PGError m => PGConnErr -> m a
 throwPGConnErr = throwError . Right
 
+readConnErr :: PQ.Connection -> IO DT.Text
+readConnErr conn = do
+  m <- PQ.errorMessage conn
+  return $  maybe "(empty connection error message)" lenientDecodeUtf8 m
+
 pgRetrying
   :: (MonadIO m)
   => IO ()
@@ -158,10 +163,7 @@ initPQConn ci logger =
     resetFn = return ()
     retryP = mkPGRetryPolicy $ ciRetries ci
 
-    whenConnNotOk conn = do
-      m <- PQ.errorMessage conn
-      let msg = maybe mempty lenientDecodeUtf8 m
-      return $ Left $ PGConnErr msg
+    whenConnNotOk conn = Left . PGConnErr <$> readConnErr conn
 
     whenConnOk conn = do
       -- Check the server version
@@ -290,7 +292,7 @@ checkResult conn mRes =
   case mRes of
     Nothing -> do
       -- This is a fatal error.
-      msg <- getErrMsg
+      msg <- liftIO $ readConnErr conn
       let whenConnOk = throwPGIntErr $
                    PGIUnexpected $ "Fatal, OOM maybe? : " <> msg
       isConnOk >>= bool (whenConnNotOk msg) whenConnOk
@@ -316,14 +318,10 @@ checkResult conn mRes =
       connSt <- lift $ PQ.status conn
       return $ connSt == PQ.ConnectionOk
 
-    getErrMsg = do
-      mErr <- lift $ PQ.errorMessage conn
-      return $ maybe mempty lenientDecodeUtf8 mErr
-
-    whenConnNotOk = throwPGConnErr . PGConnErr
+    whenConnNotOk msg = throwPGConnErr $ PGConnErr msg
 
     whenFatalErr res st = do
-      msg <- getErrMsg
+      msg <- liftIO $ readConnErr conn
       isConnOk >>= bool (whenConnNotOk msg) (withFullErr res st)
 
     errField res       = lift . PQ.resultErrorField res
