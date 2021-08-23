@@ -62,14 +62,15 @@ listen pool channel handler = catchConnErr $
       either (throwError . fromPGConnErr) return r
       -- Check for input
       success <- liftIO $ PQ.consumeInput conn
-      unless success throwConsumeFailed
+      unless success $ throwConsumeFailed conn
       liftIO $ processNotifs conn
   where
     listenCmd = "LISTEN  " <> getChannelTxt channel <> ";"
     throwTxErr =
       throwError . fromPGTxErr . PGTxErr listenCmd [] False
-    throwConsumeFailed = throwError $ fromPGConnErr $
-      PGConnErr "consuming input failed from postgres connection"
+    throwConsumeFailed conn = do
+      msg <- liftIO $ readConnErr conn
+      throwError $ fromPGConnErr $ PGConnErr msg
 
     processNotifs conn = do
       -- Collect notification

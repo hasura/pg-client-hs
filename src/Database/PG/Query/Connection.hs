@@ -20,6 +20,7 @@ module Database.PG.Query.Connection
     , PGConn(..)
     , resetPGConn
     , PGConnErr(..)
+    , readConnErr
     , ResultOk(..)
     , getPQRes
     , Template
