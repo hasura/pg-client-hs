@@ -24,6 +24,9 @@ custom-setup
     , Cabal  >=1.10
 
 library
+  extra-libraries:
+      krb5
+    , ssl
   hs-source-dirs:      src
   exposed-modules:     Database.PG.Query
                      , Database.PG.Query.Class
