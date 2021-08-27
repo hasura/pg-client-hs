@@ -44,8 +44,8 @@ psqlBuildInfo lbi = do
 
   -- On Debian, --includedir and --pkgincludedir return the path
   -- "/usr/include/postgresql" but on Arch Linux, they are respectively
-  -- "/usr/inculde" and "/usr/include/postgresql".  We need to have
-  -- "/usr/inculde/postgresql" as part of our includes for "internal/postgres_fe.h"
+  -- "/usr/include" and "/usr/include/postgresql".  We need to have
+  -- "/usr/include/postgresql" as part of our includes for "internal/postgres_fe.h"
   incDir <- pgconfig ["--includedir"]
   pkgIncDir <- pgconfig ["--pkgincludedir"]
   libDir <- pgconfig ["--libdir"]
