@@ -82,6 +82,9 @@
         inherit (flake) packages;
         defaultPackage = flake.packages."pg-client:lib:pg-client";
         devShell = pkgs.pg-client.shellFor {
+          # NOTE: Workaround for https://github.com/input-output-hk/haskell.nix/issues/590#issuecomment-712702992
+          additional = hpkgs: [ hpkgs.pg-client ];
+          withHoogle = true;
           tools = {
             cabal = "3.4.0.0";
             haskell-language-server = "1.3.0.0";
