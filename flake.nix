@@ -66,21 +66,27 @@
       overlays = [
         haskell-nix.overlay
         (import ./nix/hls-overlay.nix)
+        (import ./nix/pg-client-overlay.nix { inherit (inputs) gitignoreSrc; })
       ];
     in
     flake-utils.lib.eachSystem systems (system:
       let
         pkgs = import nixpkgs { inherit config overlays system; };
-        gitignore = import inputs.gitignoreSrc { inherit (pkgs) lib; };
-        builder = import ./nix/builder.nix { inherit gitignore pkgs; };
+        flake = pkgs.pg-client.flake { };
       in
-      {
-        inherit (inputs) flake-compat;
-        devShell = builder.shellFor {
-          tools = {
-            cabal = "3.4.0.0";
-            haskell-language-server = "1.3.0.0";
+        {
+          # NOTE: We can't pass the entirety of 'flake' through here due to
+          # a bug somewhere between haskell.nix and the Nix CLI itself.
+          #
+          # cf. https://github.com/input-output-hk/haskell.nix/issues/1097
+          inherit (flake) packages;
+          defaultPackage = flake.packages."pg-client:lib:pg-client";
+          devShell = pkgs.pg-client.shellFor {
+            tools = {
+              cabal = "3.4.0.0";
+              haskell-language-server = "1.3.0.0";
+            };
           };
-        };
-      });
+        }
+    );
 }
