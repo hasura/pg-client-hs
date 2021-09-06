@@ -271,12 +271,13 @@ sqlFromFile fp = do
 -- optionally expiring the connection after a configurable amount of time so
 -- that memory at least can't accumulate unbounded in long-lived connections.
 --
--- See ticket for discussion of more long-term solutions.
+-- See ticket at <https://github.com/hasura/graphql-engine/issues/5087>
+-- for discussion of more long-term solutions.
 --
 -- Note that idle connections that aren't actively expired here will be
 -- destroyed per the timeout policy in Data.Pool.
 withExpiringPGconn
-  :: (MonadBaseControl IO m, MonadIO m)=> PGPool -> (PGConn -> m a) -> m a
+  :: (MonadBaseControl IO m, MonadIO m) => PGPool -> (PGConn -> m a) -> m a
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:
