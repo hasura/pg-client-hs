@@ -1,3 +1,5 @@
+cabal-version:       2.2
+
 name:                pg-client
 version:             0.1.0
 -- synopsis:
@@ -11,7 +13,6 @@ copyright:           2017 Hasura Systems Private Limited
 category:            Database
 build-type:          Simple
 extra-source-files:  README.md
-cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
