@@ -93,4 +93,4 @@ benchmark pg-client-bench
 
 source-repository head
   type:     git
-  location: https://github.com/hasura/platform
+  location: https://github.com/hasura/pg-client-hs
