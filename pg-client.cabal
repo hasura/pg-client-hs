@@ -9,19 +9,9 @@ author:              Vamshi Surabhi
 maintainer:          vamshi@hasura.io
 copyright:           2017 Hasura Systems Private Limited
 category:            Database
-build-type:          Custom
+build-type:          Simple
 extra-source-files:  README.md
-                     cbits/libpq-bindings.h
-                     shim_cbits/common/fe_memutils.h
-                     shim_cbits/getaddrinfo.h
-                     shim_cbits/README
 cabal-version:       >=1.10
-
--- we copy 'postgresql-libpq' Setup.hs for our own additional bindings:
-custom-setup
-  setup-depends:
-      base   >=4.3
-    , Cabal  >=1.10
 
 library
   hs-source-dirs:      src
@@ -32,7 +22,6 @@ library
                      , Database.PG.Query.Transaction
                      , Database.PG.Query.Pool
                      , Database.PG.Query.Listen
-  other-modules:       Database.PG.ExtraBindings
 
   build-depends:       base >= 4.7 && < 5
                      , attoparsec >= 0.13
@@ -63,13 +52,6 @@ library
 
   default-language:    Haskell2010
   ghc-options:         -Wall
-  -- C libs stuff:
-  c-sources:           cbits/libpq-bindings.c
-  include-dirs:        cbits
-                       shim_cbits
-  extra-libraries:     pq
-  build-tools:         hsc2hs -any
-
 
 test-suite pg-client-test
   type:                exitcode-stdio-1.0
