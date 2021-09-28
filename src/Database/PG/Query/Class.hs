@@ -209,20 +209,14 @@ instance FromRow a => FromRes [a] where
     throwError "Expecting data. Instead, status is 'CommandOk'"
   fromRes (ResultOkData res) = do
     rm <- liftIO $ buildMat res
-    ExceptT $
-      return $
-        fmap V.toList $
-          sequence $ V.map fromRow rm
+    ExceptT $ return $ fmap V.toList $ sequence $ V.map fromRow rm
 
 instance FromRow a => FromRes (V.Vector a) where
   fromRes (ResultOkEmpty _) =
     throwError "Expecting data. Instead, status is 'CommandOk'"
   fromRes (ResultOkData res) = do
     rm <- liftIO $ buildMat res
-    ExceptT $
-      return $
-        sequence $
-          V.map fromRow rm
+    ExceptT $ return $ sequence $ V.map fromRow rm
 
 instance FromRow a => FromRes (SingleRow a) where
   fromRes (ResultOkEmpty _) =

@@ -180,25 +180,19 @@ initPQConn ci logger =
       -- Set some parameters and check the response
       mRes <-
         PQ.exec conn $
-          BL.toStrict $
-            BB.toLazyByteString $
-              mconcat
-                [ BB.string7 "SET client_encoding = 'UTF8';",
-                  BB.string7 "SET client_min_messages TO WARNING;"
-                ]
+          BL.toStrict . BB.toLazyByteString . mconcat $
+            [ BB.string7 "SET client_encoding = 'UTF8';",
+              BB.string7 "SET client_min_messages TO WARNING;"
+            ]
       case mRes of
         Just res -> do
           st <- PQ.resultStatus res
           case st of
             PQ.CommandOk -> return $ Right conn
             _ ->
-              return $
-                Left $
-                  PGConnErr "unexpected status after setting params"
+              return $ Left $ PGConnErr "unexpected status after setting params"
         Nothing ->
-          return $
-            Left $
-              PGConnErr "unexpected result after setting params"
+          return $ Left $ PGConnErr "unexpected result after setting params"
 
 defaultConnInfo :: ConnInfo
 defaultConnInfo = ConnInfo 0 details
