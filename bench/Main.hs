@@ -10,7 +10,6 @@ import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
 import Data.FileEmbed qualified as FE
 import Data.Functor.Identity
--- import qualified Data.Hashable                as Hash
 import Data.Int
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
