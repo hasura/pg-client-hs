@@ -1,86 +1,86 @@
-{-# LANGUAGE DeriveGeneric              #-}
-{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE OverloadedStrings          #-}
-{-# LANGUAGE TemplateHaskell            #-}
-{-# LANGUAGE TupleSections              #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE TemplateHaskell #-}
+{-# LANGUAGE TupleSections #-}
 
 module Database.PG.Query.Connection
-    ( initPQConn
-    , defaultConnInfo
-    , ConnInfo(..)
-    , ConnDetails(..)
-    , ConnOptions(..)
-    , pgConnString
-    , PGQuery(..)
-    , PGRetryPolicy
-    , mkPGRetryPolicy
-    , PGLogEvent(..)
-    , PGLogger
-    , PGConn(..)
-    , resetPGConn
-    , PGConnErr(..)
-    , readConnErr
-    , ResultOk(..)
-    , getPQRes
-    , Template
-    , mkTemplate
-    , PrepArg
-    , prepare
-    , execMulti
-    , execCmd
-    , execQuery
-    , lenientDecodeUtf8
-    , PGErrInternal(..)
-    , PGStmtErrDetail(..)
-    ) where
+  ( initPQConn,
+    defaultConnInfo,
+    ConnInfo (..),
+    ConnDetails (..),
+    ConnOptions (..),
+    pgConnString,
+    PGQuery (..),
+    PGRetryPolicy,
+    mkPGRetryPolicy,
+    PGLogEvent (..),
+    PGLogger,
+    PGConn (..),
+    resetPGConn,
+    PGConnErr (..),
+    readConnErr,
+    ResultOk (..),
+    getPQRes,
+    Template,
+    mkTemplate,
+    PrepArg,
+    prepare,
+    execMulti,
+    execCmd,
+    execQuery,
+    lenientDecodeUtf8,
+    PGErrInternal (..),
+    PGStmtErrDetail (..),
+  )
+where
 
-import           Control.Exception
-import           Control.Monad.Except
-import           Data.Aeson
-import           Data.Aeson.Casing
-import           Data.Aeson.TH
-import           Data.Bool
-import           Data.Hashable
-import           Data.IORef
-import           Data.Maybe
-import           Data.Time
-import           Data.Word
-import           GHC.Exts
-import           GHC.Generics
+import Control.Exception
+import Control.Monad.Except
+import Control.Retry qualified as CR
+import Data.Aeson
+import Data.Aeson.Casing
+import Data.Aeson.TH
+import Data.Bool
+import Data.ByteString qualified as DB
+import Data.ByteString.Builder qualified as BB
+import Data.ByteString.Lazy qualified as BL
+import Data.HashTable.IO qualified as HI
+import Data.Hashable
+import Data.IORef
+import Data.Maybe
+import Data.Text qualified as DT
+import Data.Text.Encoding qualified as TE
+import Data.Text.Encoding.Error qualified as TE
+import Data.Time
+import Data.Word
+import Database.PostgreSQL.LibPQ qualified as PQ
+import GHC.Exts
+import GHC.Generics
 
-import qualified Control.Retry             as CR
-import qualified Data.ByteString           as DB
-import qualified Data.ByteString.Builder   as BB
-import qualified Data.ByteString.Lazy      as BL
-import qualified Data.HashTable.IO         as HI
-import qualified Data.Text                 as DT
-import qualified Data.Text.Encoding        as TE
-import qualified Data.Text.Encoding.Error  as TE
-import qualified Database.PostgreSQL.LibPQ as PQ
-
-data ConnOptions
-  = ConnOptions
-    { connHost     :: !String
-    , connPort     :: !Int
-    , connUser     :: !String
-    , connPassword :: !String
-    , connDatabase :: !String
-    , connOptions  :: !(Maybe String)
-    } deriving (Eq, Read, Show)
+data ConnOptions = ConnOptions
+  { connHost :: !String,
+    connPort :: !Int,
+    connUser :: !String,
+    connPassword :: !String,
+    connDatabase :: !String,
+    connOptions :: !(Maybe String)
+  }
+  deriving (Eq, Read, Show)
 
 data ConnDetails
   = CDDatabaseURI !DB.ByteString
   | CDOptions !ConnOptions
   deriving (Show, Read, Eq)
 
-data ConnInfo
-  = ConnInfo
-  { ciRetries :: !Int
-  , ciDetails :: !ConnDetails
-  } deriving (Show, Read, Eq)
+data ConnInfo = ConnInfo
+  { ciRetries :: !Int,
+    ciDetails :: !ConnDetails
+  }
+  deriving (Show, Read, Eq)
 
-newtype PGConnErr = PGConnErr { getConnErr :: DT.Text }
+newtype PGConnErr = PGConnErr {getConnErr :: DT.Text}
   deriving (Show, Eq, ToJSON)
 
 instance Exception PGConnErr
@@ -93,6 +93,7 @@ instance ToJSON PGExecStatus where
     $(mkToJSON (aesonDrop 0 snakeCase) ''PQ.ExecStatus) pqStatus
 
 type PGRetryPolicyM m = CR.RetryPolicyM m
+
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
 newtype PGLogEvent
@@ -102,28 +103,29 @@ newtype PGLogEvent
 type PGLogger = PGLogEvent -> IO ()
 
 type PGError = Either PGErrInternal PGConnErr
+
 type PGExec a = ExceptT PGError IO a
 
-throwPGIntErr
-  :: MonadError PGError m => PGErrInternal -> m a
+throwPGIntErr ::
+  MonadError PGError m => PGErrInternal -> m a
 throwPGIntErr = throwError . Left
 
-throwPGConnErr
-  :: MonadError PGError m => PGConnErr -> m a
+throwPGConnErr ::
+  MonadError PGError m => PGConnErr -> m a
 throwPGConnErr = throwError . Right
 
 readConnErr :: PQ.Connection -> IO DT.Text
 readConnErr conn = do
   m <- PQ.errorMessage conn
-  return $  maybe "(empty connection error message)" lenientDecodeUtf8 m
+  return $ maybe "(empty connection error message)" lenientDecodeUtf8 m
 
-pgRetrying
-  :: (MonadIO m)
-  => IO ()
-  -> PGRetryPolicyM m
-  -> PGLogger
-  -> m (Either PGConnErr a)
-  -> m a
+pgRetrying ::
+  (MonadIO m) =>
+  IO () ->
+  PGRetryPolicyM m ->
+  PGLogger ->
+  m (Either PGConnErr a) ->
+  m a
 pgRetrying resetFn retryP logger action = do
   eRes <- CR.retrying retryP shouldRetry $ const action
   either (liftIO . throwIO) return eRes
@@ -134,22 +136,23 @@ pgRetrying resetFn retryP logger action = do
     onError rs = do
       let retryIterNo = CR.rsIterNumber rs
       liftIO $ do
-        logger $ PLERetryMsg $
-          "postgres connection failed, retrying("
-          <> DT.pack (show retryIterNo) <> ")."
+        logger $
+          PLERetryMsg $
+            "postgres connection failed, retrying("
+              <> DT.pack (show retryIterNo)
+              <> ")."
         resetFn
       return True
 
 -- |
 -- Establish and initialize a conn.
-initPQConn
-  :: ConnInfo
-  -> PGLogger
-  -> IO PQ.Connection
+initPQConn ::
+  ConnInfo ->
+  PGLogger ->
+  IO PQ.Connection
 initPQConn ci logger =
   -- Retry if postgres connection error occurs
   pgRetrying resetFn retryP logger $ do
-
     -- Initialise the connection
     conn <- PQ.connectdb (pgConnString $ ciDetails ci)
 
@@ -175,79 +178,87 @@ initPQConn ci logger =
 
     whenSerVerOk conn = do
       -- Set some parameters and check the response
-      mRes <- PQ.exec conn $ BL.toStrict $ BB.toLazyByteString $ mconcat
-              [ BB.string7 "SET client_encoding = 'UTF8';"
-              , BB.string7 "SET client_min_messages TO WARNING;"
-              ]
+      mRes <-
+        PQ.exec conn $
+          BL.toStrict . BB.toLazyByteString . mconcat $
+            [ BB.string7 "SET client_encoding = 'UTF8';",
+              BB.string7 "SET client_min_messages TO WARNING;"
+            ]
       case mRes of
         Just res -> do
           st <- PQ.resultStatus res
           case st of
             PQ.CommandOk -> return $ Right conn
-            _            -> return $ Left $
-                            PGConnErr "unexpected status after setting params"
-        Nothing  -> return $ Left $
-                    PGConnErr "unexpected result after setting params"
+            _ ->
+              return $ Left $ PGConnErr "unexpected status after setting params"
+        Nothing ->
+          return $ Left $ PGConnErr "unexpected result after setting params"
 
 defaultConnInfo :: ConnInfo
 defaultConnInfo = ConnInfo 0 details
   where
-    details = CDOptions ConnOptions
-              { connHost = "127.0.0.1"
-              , connPort = 5432
-              , connUser = "postgres"
-              , connPassword = ""
-              , connDatabase = ""
-              , connOptions = Nothing
-              }
+    details =
+      CDOptions
+        ConnOptions
+          { connHost = "127.0.0.1",
+            connPort = 5432,
+            connUser = "postgres",
+            connPassword = "",
+            connDatabase = "",
+            connOptions = Nothing
+          }
 
 pgConnString :: ConnDetails -> DB.ByteString
 pgConnString (CDDatabaseURI uri) = uri
-pgConnString (CDOptions opts)    = fromString connstr
+pgConnString (CDOptions opts) = fromString connstr
   where
-    connstr = str "host="     connHost
-            $ num "port="     connPort
-            $ str "user="     connUser
-            $ str "password=" connPassword
-            $ str "dbname="   connDatabase
-            $ mStr "options=" connOptions []
+    connstr =
+      str "host=" connHost $
+        num "port=" connPort $
+          str "user=" connUser $
+            str "password=" connPassword $
+              str "dbname=" connDatabase $
+                mStr "options=" connOptions []
 
     str name field
       | null value = id
-      | otherwise  = showString name . quote value . space
-        where value = field opts
+      | otherwise = showString name . quote value . space
+      where
+        value = field opts
 
     mStr name field
       | null value = id
-      | otherwise  = showString name . quote value . space
-        where value = fromMaybe "" (field opts)
+      | otherwise = showString name . quote value . space
+      where
+        value = fromMaybe "" (field opts)
 
     num name field
       | value <= 0 = id
-      | otherwise  = showString name . shows value . space
-        where value = field opts
+      | otherwise = showString name . shows value . space
+      where
+        value = field opts
 
     quote s rest = '\'' : foldr delta ('\'' : rest) s
-       where
-         delta c cs = case c of
-                        '\\' -> '\\' : '\\' : cs
-                        '\'' -> '\\' : '\'' : cs
-                        _    -> c : cs
+      where
+        delta c cs = case c of
+          '\\' -> '\\' : '\\' : cs
+          '\'' -> '\\' : '\'' : cs
+          _ -> c : cs
 
     space [] = []
-    space xs = ' ':xs
+    space xs = ' ' : xs
 
-data PGStmtErrDetail
-  = PGStmtErrDetail
-  { edExecStatus  :: !PGExecStatus
-  , edStatusCode  :: !(Maybe DT.Text)
-  , edMessage     :: !(Maybe DT.Text)
-  , edDescription :: !(Maybe DT.Text)
-  , edHint        :: !(Maybe DT.Text)
-  } deriving (Show, Eq, Generic)
+data PGStmtErrDetail = PGStmtErrDetail
+  { edExecStatus :: !PGExecStatus,
+    edStatusCode :: !(Maybe DT.Text),
+    edMessage :: !(Maybe DT.Text),
+    edDescription :: !(Maybe DT.Text),
+    edHint :: !(Maybe DT.Text)
+  }
+  deriving (Show, Eq, Generic)
 
 instance ToJSON PGStmtErrDetail where
-   toJSON = genericToJSON $ aesonDrop 2 snakeCase
+  toJSON = genericToJSON $ aesonDrop 2 snakeCase
 
 data ResultOk
   = ResultOkEmpty !PQ.Result
@@ -257,56 +268,56 @@ data ResultOk
 {-# INLINE getPQRes #-}
 getPQRes :: ResultOk -> PQ.Result
 getPQRes (ResultOkEmpty res) = res
-getPQRes (ResultOkData res)  = res
+getPQRes (ResultOkData res) = res
 
 {-# INLINE lenientDecodeUtf8 #-}
 lenientDecodeUtf8 :: DB.ByteString -> DT.Text
 lenientDecodeUtf8 = TE.decodeUtf8With TE.lenientDecode
 
-retryOnConnErr
-  :: PGConn
-  -> PGExec a
-  -> ExceptT PGErrInternal IO a
+retryOnConnErr ::
+  PGConn ->
+  PGExec a ->
+  ExceptT PGErrInternal IO a
 retryOnConnErr pgConn action =
   pgRetrying resetFn retryP logger $ do
     resE <- lift $ runExceptT action
     case resE of
-      Right r                -> return $ Right r
-      Left (Left pgIntErr)   -> throwError pgIntErr
+      Right r -> return $ Right r
+      Left (Left pgIntErr) -> throwError pgIntErr
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
     PGConn _ _ retryP logger _ _ _ _ = pgConn
 
-checkResult
-  :: PQ.Connection
-  -> Maybe PQ.Result
-  -> PGExec ResultOk
+checkResult ::
+  PQ.Connection ->
+  Maybe PQ.Result ->
+  PGExec ResultOk
 checkResult conn mRes =
   case mRes of
     Nothing -> do
       -- This is a fatal error.
       msg <- liftIO $ readConnErr conn
-      let whenConnOk = throwPGIntErr $
-                   PGIUnexpected $ "Fatal, OOM maybe? : " <> msg
+      let whenConnOk =
+            throwPGIntErr $
+              PGIUnexpected $ "Fatal, OOM maybe? : " <> msg
       isConnOk >>= bool (whenConnNotOk msg) whenConnOk
-
     Just res -> do
       st <- lift $ PQ.resultStatus res
       -- validate the result status with the given function
       case st of
-        PQ.CommandOk     -> return $ ResultOkEmpty res
-        PQ.TuplesOk      -> return $ ResultOkData res
-
+        PQ.CommandOk -> return $ ResultOkEmpty res
+        PQ.TuplesOk -> return $ ResultOkData res
         -- Any of these indicate error
-        PQ.BadResponse   -> withFullErr res st
+        PQ.BadResponse -> withFullErr res st
         PQ.NonfatalError -> withFullErr res st
-        PQ.FatalError    -> whenFatalErr res st
-        PQ.EmptyQuery    -> withFullErr res st
-
+        PQ.FatalError -> whenFatalErr res st
+        PQ.EmptyQuery -> withFullErr res st
         -- Not error, but unexpected status like copy in or copy out
-        _                -> throwPGIntErr $ PGIUnexpected $
-                            "Unexpected execStatus : " <> DT.pack (show st)
+        _ ->
+          throwPGIntErr $
+            PGIUnexpected $
+              "Unexpected execStatus : " <> DT.pack (show st)
   where
     isConnOk = do
       connSt <- lift $ PQ.status conn
@@ -318,51 +329,53 @@ checkResult conn mRes =
       msg <- liftIO $ readConnErr conn
       isConnOk >>= bool (whenConnNotOk msg) (withFullErr res st)
 
-    errField res       = lift . PQ.resultErrorField res
+    errField res = lift . PQ.resultErrorField res
     withFullErr res st = do
       code <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagSqlstate
-      msg  <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessagePrimary
+      msg <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessagePrimary
       desc <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessageDetail
       hint <- fmap lenientDecodeUtf8 <$> errField res PQ.DiagMessageHint
-      throwPGIntErr $ PGIStatement $
-        PGStmtErrDetail (PGExecStatus st) code msg desc hint
+      throwPGIntErr $
+        PGIStatement $
+          PGStmtErrDetail (PGExecStatus st) code msg desc hint
 
 {-# INLINE assertResCmd #-}
-assertResCmd
-  :: PQ.Connection
-  -> Maybe PQ.Result
-  -> PGExec ()
+assertResCmd ::
+  PQ.Connection ->
+  Maybe PQ.Result ->
+  PGExec ()
 assertResCmd conn mRes = do
   resOk <- checkResult conn mRes
   checkResOk resOk
   where
     checkResOk (ResultOkEmpty _) = return ()
-    checkResOk (ResultOkData _) = throwPGIntErr $
-      PGIUnexpected "cmd expected; tuples found"
+    checkResOk (ResultOkData _) =
+      throwPGIntErr $
+        PGIUnexpected "cmd expected; tuples found"
 
-mkPGRetryPolicy
-  :: MonadIO m
-  => Int           -- ^ number of retries
-  -> PGRetryPolicyM m
+mkPGRetryPolicy ::
+  MonadIO m =>
+  -- | number of retries
+  Int ->
+  PGRetryPolicyM m
 mkPGRetryPolicy numRetries =
-    CR.limitRetriesByDelay limitDelay $
+  CR.limitRetriesByDelay limitDelay $
     CR.exponentialBackoff baseDelay <> CR.limitRetries numRetries
   where
     -- limitDelay effectively clamps numRetries to <= 6
     limitDelay = 6 * 1000 * 1000 -- 6 seconds
     baseDelay = 100 * 1000 -- 0.1 second
 
-data PGConn
-  = PGConn
-  { pgPQConn       :: !PQ.Connection
-  , pgAllowPrepare :: !Bool
-  , pgRetryPolicy  :: !PGRetryPolicy
-  , pgLogger       :: !PGLogger
-  , pgCounter      :: !(IORef Word16)
-  , pgTable        :: !RKLookupTable
-  , pgCreatedAt    :: !UTCTime
-  , pgMbLifetime   :: !(Maybe NominalDiffTime)
-  -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
+data PGConn = PGConn
+  { pgPQConn :: !PQ.Connection,
+    pgAllowPrepare :: !Bool,
+    pgRetryPolicy :: !PGRetryPolicy,
+    pgLogger :: !PGLogger,
+    pgCounter :: !(IORef Word16),
+    pgTable :: !RKLookupTable,
+    pgCreatedAt :: !UTCTime,
+    -- | If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
+    pgMbLifetime :: !(Maybe NominalDiffTime)
   }
 
 resetPGConn :: PGConn -> IO ()
@@ -406,13 +419,13 @@ instance Hashable LocalKey where
 -- Remote statement key.
 type RemoteKey = DB.ByteString
 
-prepare
-  :: PGConn
-  -> Template
-  -> [PQ.Oid]
-  -> PGExec RemoteKey
+prepare ::
+  PGConn ->
+  Template ->
+  [PQ.Oid] ->
+  PGExec RemoteKey
 prepare (PGConn conn _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
-  let lk      = localKey tpl tl
+  let lk = localKey tpl tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
     -- Already prepared
@@ -434,12 +447,11 @@ prepare (PGConn conn _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
 
 type PrepArg = (PQ.Oid, Maybe (DB.ByteString, PQ.Format))
 
-data PGQuery a
-  = PGQuery
-  { pgqTemplate   :: !Template
-  , pgqArgs       :: [PrepArg]
-  , pgqPreparable :: Bool
-  , pgqConv       :: ResultOk -> ExceptT DT.Text IO a
+data PGQuery a = PGQuery
+  { pgqTemplate :: !Template,
+    pgqArgs :: [PrepArg],
+    pgqPreparable :: Bool,
+    pgqConv :: ResultOk -> ExceptT DT.Text IO a
   }
 
 data PGErrInternal
@@ -448,17 +460,18 @@ data PGErrInternal
   deriving (Eq)
 
 instance ToJSON PGErrInternal where
-  toJSON (PGIUnexpected msg)      = toJSON msg
+  toJSON (PGIUnexpected msg) = toJSON msg
   toJSON (PGIStatement errDetail) = toJSON errDetail
 
 {-# INLINE execQuery #-}
-execQuery
-  :: PGConn
-  -> PGQuery a
-  -> ExceptT PGErrInternal IO a
+execQuery ::
+  PGConn ->
+  PGQuery a ->
+  ExceptT PGErrInternal IO a
 execQuery pgConn pgQuery = do
-  resOk <- retryOnConnErr pgConn $
-    bool withoutPrepare withPrepare $ allowPrepare && preparable
+  resOk <-
+    retryOnConnErr pgConn $
+      bool withoutPrepare withPrepare $ allowPrepare && preparable
   withExceptT PGIUnexpected $ convF resOk
   where
     PGConn conn allowPrepare _ _ _ _ _ _ = pgConn
@@ -475,11 +488,11 @@ execQuery pgConn pgQuery = do
       checkResult conn mRes
 
 {-# INLINE execMulti #-}
-execMulti
-  :: PGConn
-  -> Template
-  -> (ResultOk -> ExceptT DT.Text IO a)
-  -> ExceptT PGErrInternal IO a
+execMulti ::
+  PGConn ->
+  Template ->
+  (ResultOk -> ExceptT DT.Text IO a) ->
+  ExceptT PGErrInternal IO a
 execMulti pgConn (Template t) convF = do
   resOk <- retryOnConnErr pgConn $ do
     mRes <- liftIO $ PQ.exec conn t
@@ -489,10 +502,10 @@ execMulti pgConn (Template t) convF = do
     conn = pgPQConn pgConn
 
 {-# INLINE execCmd #-}
-execCmd
-  :: PGConn
-  -> Template
-  -> ExceptT PGErrInternal IO ()
+execCmd ::
+  PGConn ->
+  Template ->
+  ExceptT PGErrInternal IO ()
 execCmd pgConn (Template t) =
   retryOnConnErr pgConn $ do
     mRes <- lift $ PQ.execParams conn t [] PQ.Binary

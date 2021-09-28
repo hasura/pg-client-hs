@@ -1,61 +1,61 @@
-{-# LANGUAGE FlexibleContexts    #-}
-{-# LANGUAGE OverloadedStrings   #-}
-{-# LANGUAGE RecordWildCards     #-}
+{-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TemplateHaskell     #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-missing-fields #-}
 
 module Database.PG.Query.Pool
-  ( ConnParams (..)
-  , PGPool
-  , pgPoolStats
-  , PGPoolStats(..)
-  , getInUseConnections
-  , withExpiringPGconn
-  , defaultConnParams
-  , initPGPool
-  , destroyPGPool
-  , withConn
-  , beginTx
-  , abortTx
-  , commitTx
-  , runTx
-  , runTx'
-  , catchConnErr
-  , sql
-  , sqlFromFile
-  , PGExecErr(..)
-  , FromPGConnErr(..)
-  , FromPGTxErr(..)
-  -- * Forcing destroying of connections
-  , PGConnectionStale(..)
-  ) where
+  ( ConnParams (..),
+    PGPool,
+    pgPoolStats,
+    PGPoolStats (..),
+    getInUseConnections,
+    withExpiringPGconn,
+    defaultConnParams,
+    initPGPool,
+    destroyPGPool,
+    withConn,
+    beginTx,
+    abortTx,
+    commitTx,
+    runTx,
+    runTx',
+    catchConnErr,
+    sql,
+    sqlFromFile,
+    PGExecErr (..),
+    FromPGConnErr (..),
+    FromPGTxErr (..),
 
-import qualified Data.ByteString               as BS
-import qualified Data.HashTable.IO             as HI
-import qualified Data.Pool                     as RP
-import qualified Data.Text                     as T
-import qualified Data.Text.Encoding            as TE
-import qualified Database.PostgreSQL.LibPQ     as PQ
-import qualified System.Metrics.Distribution   as EKG.Distribution
+    -- * Forcing destroying of connections
+    PGConnectionStale (..),
+  )
+where
 
-import           Control.Exception
-import           Control.Monad.Except
-import           Control.Monad.Trans.Control
-import           Data.Aeson
-import           Data.IORef
-import           Data.Time
-import           GHC.Exts                      (fromString)
-import           Language.Haskell.TH.Quote
-import           Language.Haskell.TH.Syntax
-import           System.Metrics.Distribution   (Distribution)
-
-import           Database.PG.Query.Connection
-import           Database.PG.Query.Transaction
+import Control.Exception
+import Control.Monad.Except
+import Control.Monad.Trans.Control
+import Data.Aeson
+import Data.ByteString qualified as BS
+import Data.HashTable.IO qualified as HI
+import Data.IORef
+import Data.Pool qualified as RP
+import Data.Text qualified as T
+import Data.Text.Encoding qualified as TE
+import Data.Time
+import Database.PG.Query.Connection
+import Database.PG.Query.Transaction
+import Database.PostgreSQL.LibPQ qualified as PQ
+import GHC.Exts (fromString)
+import Language.Haskell.TH.Quote
+import Language.Haskell.TH.Syntax
+import System.Metrics.Distribution (Distribution)
+import System.Metrics.Distribution qualified as EKG.Distribution
 
 data PGPool = PGPool
   { -- | the underlying connection pool
-    _pool  :: !(RP.Pool PGConn),
+    _pool :: !(RP.Pool PGConn),
     -- | EKG stats about how we acquire, release, and manage connections
     _stats :: !PGPoolStats
   }
@@ -67,25 +67,24 @@ pgPoolStats = _stats
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
 data PGPoolStats = PGPoolStats
   { -- | time taken to acquire new connections from postgres
-    _dbConnAcquireLatency   :: !Distribution
-  , _poolConnAcquireLatency :: !Distribution
+    _dbConnAcquireLatency :: !Distribution,
+    _poolConnAcquireLatency :: !Distribution
   }
 
 getInUseConnections :: PGPool -> IO Int
 getInUseConnections = RP.getInUseResourceCount . _pool
 
-data ConnParams
-  = ConnParams
-    { cpStripes      :: !Int
-    , cpConns        :: !Int
-    , cpIdleTime     :: !Int
-    -- ^ Connections that sit idle for longer than cpIdleTime may be destroyed.
-    , cpAllowPrepare :: !Bool
-    , cpMbLifetime   :: !(Maybe NominalDiffTime)
-    -- ^ If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
-    , cpTimeout      :: !(Maybe NominalDiffTime)
-    -- ^ If passed, 'withConnection' will throw a 'TimeoutException' after 'timeout' seconds.
-    }
+data ConnParams = ConnParams
+  { cpStripes :: !Int,
+    cpConns :: !Int,
+    -- | Connections that sit idle for longer than cpIdleTime may be destroyed.
+    cpIdleTime :: !Int,
+    cpAllowPrepare :: !Bool,
+    -- | If passed, 'withExpiringPGconn' will destroy the connection when it is older than lifetime.
+    cpMbLifetime :: !(Maybe NominalDiffTime),
+    -- | If passed, 'withConnection' will throw a 'TimeoutException' after 'timeout' seconds.
+    cpTimeout :: !(Maybe NominalDiffTime)
+  }
   deriving (Show, Eq)
 
 defaultConnParams :: ConnParams
@@ -97,30 +96,31 @@ initPGPoolStats = do
   _poolConnAcquireLatency <- EKG.Distribution.new
   pure PGPoolStats {..}
 
-initPGPool :: ConnInfo
-           -> ConnParams
-           -> PGLogger
-           -> IO PGPool
+initPGPool ::
+  ConnInfo ->
+  ConnParams ->
+  PGLogger ->
+  IO PGPool
 initPGPool ci cp logger = do
   _stats <- initPGPoolStats
-  _pool <-  RP.createPool' (creator _stats) destroyer nStripes diffTime nConns nTimeout
+  _pool <- RP.createPool' (creator _stats) destroyer nStripes diffTime nConns nTimeout
   pure PGPool {..}
   where
-    nStripes  = cpStripes cp
-    nConns    = cpConns cp
-    nTimeout  = cpTimeout cp
+    nStripes = cpStripes cp
+    nConns = cpConns cp
+    nTimeout = cpTimeout cp
     retryP = mkPGRetryPolicy $ ciRetries ci
     creator stats = do
       createdAt <- getCurrentTime
-      pqConn  <- initPQConn ci logger
+      pqConn <- initPQConn ci logger
       connAcquiredAt <- getCurrentTime
       let connAcquiredMicroseconds = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
       EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMicroseconds
-      ctr     <- newIORef 0
-      table   <- HI.new
+      ctr <- newIORef 0
+      table <- HI.new
       return $ PGConn pqConn (cpAllowPrepare cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
-    diffTime  = fromIntegral $ cpIdleTime cp
+    diffTime = fromIntegral $ cpIdleTime cp
 
 -- | Release all connections acquired by the pool.
 destroyPGPool :: PGPool -> IO ()
@@ -133,7 +133,7 @@ data PGExecErr
 
 instance ToJSON PGExecErr where
   toJSON (PGExecErrConn pce) = toJSON pce
-  toJSON (PGExecErrTx txe)   = toJSON txe
+  toJSON (PGExecErrTx txe) = toJSON txe
 
 instance FromPGTxErr PGExecErr where
   fromPGTxErr = PGExecErrTx
@@ -143,14 +143,16 @@ instance FromPGConnErr PGExecErr where
 
 instance Show PGExecErr where
   show (PGExecErrConn pce) = show pce
-  show (PGExecErrTx txe)   = show txe
+  show (PGExecErrTx txe) = show txe
 
 beginTx :: (MonadIO m) => TxMode -> TxT m ()
 beginTx (i, w) =
   unitQ query () True
   where
-    query = fromText $ T.pack
-      ("BEGIN " <> show i <> " " <> maybe "" show w)
+    query =
+      fromText $
+        T.pack
+          ("BEGIN " <> show i <> " " <> maybe "" show w)
 
 commitTx :: (MonadIO m) => TxT m ()
 commitTx =
@@ -166,10 +168,12 @@ class FromPGTxErr e where
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
-asTransaction :: (MonadIO m, FromPGTxErr e)
-              => TxMode
-              -> (PGConn -> ExceptT e m a)
-              -> PGConn -> ExceptT e m a
+asTransaction ::
+  (MonadIO m, FromPGTxErr e) =>
+  TxMode ->
+  (PGConn -> ExceptT e m a) ->
+  PGConn ->
+  ExceptT e m a
 asTransaction txm f pgConn = do
   -- Begin the transaction. If there is an error, you shouldn't call abort
   withExceptT fromPGTxErr $ execTx pgConn $ beginTx txm
@@ -187,27 +191,29 @@ asTransaction txm f pgConn = do
 --
 -- Catches postgres exceptions and converts them to 'e', including
 -- 'TimeoutException's thrown in case the timeout is set and reached.
-withConn :: ( MonadIO m
-            , MonadBaseControl IO m
-            , FromPGTxErr e
-            , FromPGConnErr e
-            )
-         => PGPool
-         -> (PGConn -> ExceptT e m a)
-         -> ExceptT e m a
+withConn ::
+  ( MonadIO m,
+    MonadBaseControl IO m,
+    FromPGTxErr e,
+    FromPGConnErr e
+  ) =>
+  PGPool ->
+  (PGConn -> ExceptT e m a) ->
+  ExceptT e m a
 withConn pool f =
   catchConnErr $ withExpiringPGconn pool f
 
-catchConnErr :: forall e m a
-              . (FromPGConnErr e, MonadError e m, MonadBaseControl IO m)
-             => m a
-             -> m a
+catchConnErr ::
+  forall e m a.
+  (FromPGConnErr e, MonadError e m, MonadBaseControl IO m) =>
+  m a ->
+  m a
 catchConnErr action =
   control $ \runInIO ->
-    runInIO action `catches`
-      [ Handler (runInIO . handler)
-      , Handler (runInIO . handleTimeout)
-      ]
+    runInIO action
+      `catches` [ Handler (runInIO . handler),
+                  Handler (runInIO . handleTimeout)
+                ]
   where
     handler = mkConnExHandler action fromPGConnErr
 
@@ -216,39 +222,43 @@ catchConnErr action =
       throwError (fromPGConnErr $ PGConnErr "connection acquisition timeout expired")
 
 {-# INLINE mkConnExHandler #-}
-mkConnExHandler :: (MonadError e m)
-                => m a
-                -> (PGConnErr -> e)
-                -> (PGConnErr -> m a)
+mkConnExHandler ::
+  (MonadError e m) =>
+  m a ->
+  (PGConnErr -> e) ->
+  (PGConnErr -> m a)
 mkConnExHandler _ ef = throwError . ef
 
 -- | Run a command on the given pool wrapped in a transaction.
-runTx :: ( MonadIO m
-         , MonadBaseControl IO m
-         , FromPGTxErr e
-         , FromPGConnErr e
-         )
-      => PGPool
-      -> TxMode
-      -> TxET e m a -- ^ the command to run
-      -> ExceptT e m a
+runTx ::
+  ( MonadIO m,
+    MonadBaseControl IO m,
+    FromPGTxErr e,
+    FromPGConnErr e
+  ) =>
+  PGPool ->
+  TxMode ->
+  -- | the command to run
+  TxET e m a ->
+  ExceptT e m a
 runTx pool txm tx = do
   withConn pool $ asTransaction txm $ \connRsrc -> execTx connRsrc tx
 
 -- | Run a command on the given pool without wrapping in a transaction.
-runTx' :: ( MonadIO m
-          , MonadBaseControl IO m
-          , FromPGTxErr e
-          , FromPGConnErr e
-          )
-       => PGPool
-       -> TxET e m a
-       -> ExceptT e m a
+runTx' ::
+  ( MonadIO m,
+    MonadBaseControl IO m,
+    FromPGTxErr e,
+    FromPGConnErr e
+  ) =>
+  PGPool ->
+  TxET e m a ->
+  ExceptT e m a
 runTx' pool tx = do
   withConn pool $ \connRsrc -> execTx connRsrc tx
 
 sql :: QuasiQuoter
-sql = QuasiQuoter { quoteExp = \a -> [|fromString a|] }
+sql = QuasiQuoter {quoteExp = \a -> [|fromString a|]}
 
 -- | Construct a 'Query' at compile-time from some given file.
 --
@@ -265,7 +275,7 @@ sqlFromFile fp = do
       -- NOTE: This is (effectively) the same implementation as the 'Lift'
       -- instance for 'Text' from 'th-lift-instances'.
       let strContents = T.unpack txtContents
-      in [| fromText . T.pack $ strContents |]
+       in [|fromText . T.pack $ strContents|]
 
 -- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
 -- optionally expiring the connection after a configurable amount of time so
@@ -276,19 +286,19 @@ sqlFromFile fp = do
 --
 -- Note that idle connections that aren't actively expired here will be
 -- destroyed per the timeout policy in Data.Pool.
-withExpiringPGconn
-  :: (MonadBaseControl IO m, MonadIO m) => PGPool -> (PGConn -> m a) -> m a
+withExpiringPGconn ::
+  (MonadBaseControl IO m, MonadIO m) => PGPool -> (PGConn -> m a) -> m a
 withExpiringPGconn pool f = do
   -- If the connection was stale, we'll discard it and retry, possibly forcing
   -- creation of new connection:
   old <- liftIO getCurrentTime
   handleLifted (\PGConnectionStale -> withExpiringPGconn pool f) $ do
-    RP.withResource (_pool pool) $ \connRsrc@PGConn{..} -> do
+    RP.withResource (_pool pool) $ \connRsrc@PGConn {..} -> do
       now <- liftIO getCurrentTime
       let microseconds = realToFrac (1000000 * diffUTCTime now old)
       liftIO (EKG.Distribution.add (_poolConnAcquireLatency (_stats pool)) microseconds)
       let connectionStale =
-            maybe False (\lifetime-> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
+            maybe False (\lifetime -> now `diffUTCTime` pgCreatedAt > lifetime) pgMbLifetime
       when connectionStale $ do
         -- Throwing is the only way to signal to resource pool to discard the
         -- connection at this time, so we need to use it for control flow:
@@ -300,7 +310,7 @@ withExpiringPGconn pool f = do
 -- to allow callback to signal that the connection should be destroyed and we
 -- should retry.
 data PGConnectionStale = PGConnectionStale
-  deriving Show
+  deriving (Show)
 
 instance Exception PGConnectionStale
 

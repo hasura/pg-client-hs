@@ -1,9 +1,11 @@
+cabal-version:       2.2
+
 name:                pg-client
 version:             0.1.0
 -- synopsis:
 -- description:
 homepage:            https://github.com/hasura/platform
-license:             BSD3
+license:             Apache-2.0
 license-file:        LICENSE
 author:              Vamshi Surabhi
 maintainer:          vamshi@hasura.io
@@ -11,9 +13,13 @@ copyright:           2017 Hasura Systems Private Limited
 category:            Database
 build-type:          Simple
 extra-source-files:  README.md
-cabal-version:       >=1.10
+
+common common-all
+  default-language:    Haskell2010
+  default-extensions:  ImportQualifiedPost
 
 library
+  import:              common-all
   hs-source-dirs:      src
   exposed-modules:     Database.PG.Query
                      , Database.PG.Query.Class
@@ -50,10 +56,10 @@ library
                      , retry
                      , mmorph
 
-  default-language:    Haskell2010
   ghc-options:         -Wall
 
 test-suite pg-client-test
+  import:              common-all
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
@@ -63,33 +69,27 @@ test-suite pg-client-test
                      , hspec
                      , mtl
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
-  default-language:    Haskell2010
 
 benchmark pg-client-bench
+  import:              common-all
   type:                exitcode-stdio-1.0
   hs-source-dirs:      bench
   main-is:             Main.hs
   build-depends:       base
                      , mtl
                      , criterion >= 1.4
-
                      , pg-client
-
                      , hasql
                      , hasql-transaction
                      , hasql-pool
-
                      , file-embed
                      , bytestring >= 0.10
                      , text
                      , text-builder >= 0.6
-
                      , postgresql-libpq
                      , hashable
-
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
-  default-language:    Haskell2010
 
 source-repository head
   type:     git
-  location: https://github.com/hasura/platform
+  location: https://github.com/hasura/pg-client-hs

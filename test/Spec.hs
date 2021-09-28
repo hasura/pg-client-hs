@@ -1,20 +1,17 @@
-{-# LANGUAGE BlockArguments      #-}
-{-# LANGUAGE LambdaCase          #-}
-{-# LANGUAGE NamedFieldPuns      #-}
-{-# LANGUAGE NumericUnderscores  #-}
+{-# LANGUAGE BlockArguments #-}
+{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE NumericUnderscores #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Main (main) where
 
-import           Test.Hspec
-
-import           Database.PG.Query
-
-import           Control.Concurrent    (forkIO, threadDelay)
-import           Control.Monad.Except  (MonadTrans (lift), runExceptT)
-
-import qualified Data.ByteString.Char8 as BS
-import qualified System.Environment    as Env
+import Control.Concurrent (forkIO, threadDelay)
+import Control.Monad.Except (MonadTrans (lift), runExceptT)
+import Data.ByteString.Char8 qualified as BS
+import Database.PG.Query
+import System.Environment qualified as Env
+import Test.Hspec
 
 {- Note [Running tests]
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -46,7 +43,7 @@ mkPool = do
   dbUri <- BS.pack <$> Env.getEnv "DATABASE_URL"
   initPGPool (connInfo dbUri) connParams logger
   where
-    connInfo uri = ConnInfo { ciRetries, ciDetails = mkDetails uri }
+    connInfo uri = ConnInfo {ciRetries, ciDetails = mkDetails uri}
     ciRetries = 0
     mkDetails = CDDatabaseURI
     logger = mempty
@@ -56,7 +53,8 @@ withFreshPool :: (FromPGTxErr e, FromPGConnErr e) => PGPool -> IO a -> IO (Eithe
 withFreshPool pool action =
   runExceptT
     . withConn pool
-    . const $ lift action
+    . const
+    $ lift action
 
 err :: Show a => a -> IO (Maybe String)
 err = pure . Just . show
@@ -69,48 +67,53 @@ simpleTest = do
   pool <- mkPool
   withFreshPool pool nada >>= \case
     Left (e :: PGExecErr) -> err e
-    Right _               -> mempty
+    Right _ -> mempty
 
 noConnectionAvailable :: IO (Maybe String)
 noConnectionAvailable = do
   pool <- mkPool
   withFreshPool pool (action pool) >>= \case
     Left (e :: PGExecErr) -> err e
-    Right _               -> mempty
+    Right _ -> mempty
   where
-    action pool = withFreshPool pool nada >>= \case
-      Left (_ :: PGExecErr) -> mempty
-      Right _               -> err "connection acquisition expected to fail"
+    action pool =
+      withFreshPool pool nada >>= \case
+        Left (_ :: PGExecErr) -> mempty
+        Right _ -> err "connection acquisition expected to fail"
 
 releaseAndAcquire :: IO (Maybe String)
 releaseAndAcquire = do
   pool <- mkPool
-  _ <- withFreshPool pool nada >>= \case
-    Left (e :: PGExecErr) -> err e
-    Right _               -> mempty
+  _ <-
+    withFreshPool pool nada >>= \case
+      Left (e :: PGExecErr) -> err e
+      Right _ -> mempty
   withFreshPool pool nada >>= \case
     Left (e :: PGExecErr) -> err e
-    Right _               -> mempty
+    Right _ -> mempty
 
 releaseAndAcquireWithTimeout :: IO (Maybe String)
 releaseAndAcquireWithTimeout = do
   pool <- mkPool
-  _ <- forkIO $ withFreshPool pool (threadDelay 300_000) >>= \case
-    Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
-    Right _               -> mempty
+  _ <-
+    forkIO $
+      withFreshPool pool (threadDelay 300_000) >>= \case
+        Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
+        Right _ -> mempty
   threadDelay 100_000
   withFreshPool pool nada >>= \case
     Left (e :: PGExecErr) -> err e
-    Right _               -> mempty
+    Right _ -> mempty
 
 releaseAndAcquireWithTimeoutNegative :: IO (Maybe String)
 releaseAndAcquireWithTimeoutNegative = do
   pool <- mkPool
-  _ <- forkIO $ withFreshPool pool (threadDelay 10_000_000) >>= \case
-    Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
-    Right _               -> mempty
+  _ <-
+    forkIO $
+      withFreshPool pool (threadDelay 10_000_000) >>= \case
+        Left (_ :: PGExecErr) -> error "unexpected error when acquiring connections"
+        Right _ -> mempty
   threadDelay 1_000_000
   withFreshPool pool nada >>= \case
     Left (_ :: PGExecErr) -> mempty
-    Right _               -> err "Wat"
-
+    Right _ -> err "Wat"
