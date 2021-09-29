@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TupleSections #-}
@@ -36,7 +37,8 @@ module Database.PG.Query.Connection
   )
 where
 
-import Control.Exception
+import Control.Concurrent.Interrupt (interruptOnAsyncException)
+import Control.Exception.Safe (Exception, catch, throwIO)
 import Control.Monad.Except
 import Control.Retry qualified as CR
 import Data.Aeson
@@ -287,7 +289,7 @@ retryOnConnErr pgConn action =
       Left (Right pgConnErr) -> return $ Left pgConnErr
   where
     resetFn = resetPGConn pgConn
-    PGConn _ _ retryP logger _ _ _ _ = pgConn
+    PGConn _ _ _ retryP logger _ _ _ _ = pgConn
 
 checkResult ::
   PQ.Connection ->
@@ -353,6 +355,36 @@ assertResCmd conn mRes = do
       throwPGIntErr $
         PGIUnexpected "cmd expected; tuples found"
 
+data PGCancelErr = PGCancelErr DT.Text
+  deriving (Show, Eq)
+
+instance Exception PGCancelErr
+
+cancelPG :: PQ.Cancel -> IO ()
+cancelPG c = do
+  PQ.cancel c >>= \case
+    Left err -> throwIO $ PGCancelErr $ lenientDecodeUtf8 err
+    Right () -> pure ()
+
+-- | Modify an action on a libpq connection so that asynchronous
+-- exceptions cause a cancel message to be sent on the connection
+-- before handling the exception as usual.
+-- The intent is to unblock the FFI call via the database server.
+--
+-- Note that due to handling the exception as usual (instead of
+-- just swallowing it and cancelling the request), we don't wait
+-- for the server response. Typically, the transaction will be left
+-- open, and the exception will cause the connection to be destroyed.
+-- The caller can't tell whether a transaction was committed.
+cancelOnAsync :: PQ.Connection -> IO a -> PGExec a
+cancelOnAsync conn action = do
+  c <-
+    lift (PQ.getCancel conn) >>= \case
+      Nothing -> throwPGIntErr $ PGIUnexpected $ "failed to allocate cancel handle"
+      Just c -> pure c
+  lift (interruptOnAsyncException (cancelPG c) action)
+    `catch` (\(PGCancelErr msg) -> throwPGIntErr $ PGIUnexpected $ "error cancelling query: " <> msg)
+
 mkPGRetryPolicy ::
   MonadIO m =>
   -- | number of retries
@@ -369,6 +401,11 @@ mkPGRetryPolicy numRetries =
 data PGConn = PGConn
   { pgPQConn :: !PQ.Connection,
     pgAllowPrepare :: !Bool,
+    -- | Cancel command execution when interrupted by any asynchronous exception.
+    --   On receiving an asynchronous exception, a cancel message is sent to
+    --   the server to interrupt the blocking FFI call, then exception processing
+    --   is resumed as usual (i.e., the exception isn't swallowed).
+    pgCancel :: !Bool,
     pgRetryPolicy :: !PGRetryPolicy,
     pgLogger :: !PGLogger,
     pgCounter :: !(IORef Word16),
@@ -379,7 +416,7 @@ data PGConn = PGConn
   }
 
 resetPGConn :: PGConn -> IO ()
-resetPGConn (PGConn conn _ _ _ ctr ht _ _) = do
+resetPGConn (PGConn conn _ _ _ _ ctr ht _ _) = do
   -- Reset LibPQ connection
   PQ.reset conn
   -- Set counter to 0
@@ -424,7 +461,7 @@ prepare ::
   Template ->
   [PQ.Oid] ->
   PGExec RemoteKey
-prepare (PGConn conn _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
+prepare (PGConn conn _ _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
   let lk = localKey tpl tl
   rkm <- lift $ HI.lookup table lk
   case rkm of
@@ -474,17 +511,18 @@ execQuery pgConn pgQuery = do
       bool withoutPrepare withPrepare $ allowPrepare && preparable
   withExceptT PGIUnexpected $ convF resOk
   where
-    PGConn conn allowPrepare _ _ _ _ _ _ = pgConn
+    PGConn conn allowPrepare cancelable _ _ _ _ _ _ = pgConn
     PGQuery tpl@(Template tplBytes) params preparable convF = pgQuery
+    run = bool lift (cancelOnAsync conn) cancelable
     withoutPrepare = do
       let prependToTuple2 a (b, c) = (a, b, c)
           params' = map (\(ty, v) -> prependToTuple2 ty <$> v) params
-      mRes <- lift $ PQ.execParams conn tplBytes params' PQ.Binary
+      mRes <- run $ PQ.execParams conn tplBytes params' PQ.Binary
       checkResult conn mRes
     withPrepare = do
       let (tl, vl) = unzip params
       rk <- prepare pgConn tpl tl
-      mRes <- lift $ PQ.execPrepared conn rk vl PQ.Binary
+      mRes <- run $ PQ.execPrepared conn rk vl PQ.Binary
       checkResult conn mRes
 
 {-# INLINE execMulti #-}
@@ -495,11 +533,13 @@ execMulti ::
   ExceptT PGErrInternal IO a
 execMulti pgConn (Template t) convF = do
   resOk <- retryOnConnErr pgConn $ do
-    mRes <- liftIO $ PQ.exec conn t
+    mRes <-
+      bool lift (cancelOnAsync conn) cancelable $
+        PQ.exec conn t
     checkResult conn mRes
   withExceptT PGIUnexpected $ convF resOk
   where
-    conn = pgPQConn pgConn
+    PGConn conn _ cancelable _ _ _ _ _ _ = pgConn
 
 {-# INLINE execCmd #-}
 execCmd ::
@@ -508,7 +548,9 @@ execCmd ::
   ExceptT PGErrInternal IO ()
 execCmd pgConn (Template t) =
   retryOnConnErr pgConn $ do
-    mRes <- lift $ PQ.execParams conn t [] PQ.Binary
+    mRes <-
+      bool lift (cancelOnAsync conn) cancelable $
+        PQ.execParams conn t [] PQ.Binary
     assertResCmd conn mRes
   where
-    conn = pgPQConn pgConn
+    PGConn conn _ cancelable _ _ _ _ _ _ = pgConn

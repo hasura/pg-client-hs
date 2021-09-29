@@ -28,6 +28,7 @@ library
                      , Database.PG.Query.Transaction
                      , Database.PG.Query.Pool
                      , Database.PG.Query.Listen
+                     , Control.Concurrent.Interrupt
 
   build-depends:       base >= 4.7 && < 5
                      , attoparsec >= 0.13
@@ -55,6 +56,8 @@ library
                      , postgresql-libpq
                      , retry
                      , mmorph
+                     , async
+                     , safe-exceptions
 
   ghc-options:         -Wall
 
@@ -63,11 +66,16 @@ test-suite pg-client-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
   main-is:             Spec.hs
+  other-modules:       Interrupt
+                     , Timeout
   build-depends:       base
                      , pg-client
                      , bytestring >= 0.10
                      , hspec
                      , mtl
+                     , time
+                     , async
+                     , safe-exceptions
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N -Wall
 
 benchmark pg-client-bench
