@@ -1,5 +1,6 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Database.PG.Query.Class
   ( WithCount (..),
@@ -488,9 +489,9 @@ instance ToPrepArg Day where
 instance ToPrepArg UUID.UUID where
   toPrepVal = toPrepValHelper PTI.uuid PE.uuid
 
-newtype JSON = JSON J.Value deriving (Eq, Show)
+newtype JSON = JSON J.Value deriving (Eq, Show, Hashable)
 
-newtype JSONB = JSONB J.Value deriving (Eq, Show)
+newtype JSONB = JSONB J.Value deriving (Eq, Show, Hashable)
 
 instance ToPrepArg JSON where
   toPrepVal (JSON j) = toPrepValHelper PTI.json PE.json_ast j
@@ -608,9 +609,3 @@ instance
       toPrepVal i,
       toPrepVal j
     ]
-
-instance Hashable JSON where
-  hashWithSalt i = hashWithSalt i . show
-
-instance Hashable JSONB where
-  hashWithSalt i = hashWithSalt i . show
