@@ -25,6 +25,7 @@ import Data.Aeson qualified as J
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.ByteString qualified as B
 import Data.ByteString.Lazy qualified as BL
+import Data.Hashable
 import Data.Int
 import Data.Scientific (Scientific)
 import Data.Text qualified as T
@@ -607,3 +608,9 @@ instance
       toPrepVal i,
       toPrepVal j
     ]
+
+instance Hashable JSON where
+  hashWithSalt i = hashWithSalt i . show
+
+instance Hashable JSONB where
+  hashWithSalt i = hashWithSalt i . show
