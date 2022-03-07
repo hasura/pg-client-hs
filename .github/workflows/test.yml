@@ -1,23 +1,16 @@
 name: Haskell CI
 
 on:
-  push:
-    branches: [ main ]
-  pull_request:
-    branches: [ main ]
+  push: { branches: [ "main" ] }
+  pull_request: { branches: [ "main" ] }
 
 jobs:
-  cabal:
-    name: ghc ${{ matrix.ghc }}
-    runs-on: ${{ matrix.os }}
+  ci:
+    runs-on: ubuntu-latest
     strategy:
       matrix:
-        os:
-          - ubuntu-latest
-        ghc:
-          - 8.10.4
-        cabal:
-          - latest
+        ghc: [ "8.10.7" ]
+        cabal: [ "latest" ] 
 
     services:
       postgres:
@@ -34,39 +27,39 @@ jobs:
           - 5432:5432
 
     steps:
-    - name: Install dependencies
-      run: |
-        sudo apt-get install libkrb5-dev libpq-dev libssl-dev
+      - name: Install dependencies
+        run: |
+          sudo apt-get install libkrb5-dev libpq-dev libssl-dev
 
-    - uses: actions/checkout@v2
+      - uses: actions/checkout@v2
 
-    - uses: haskell/actions/setup@v1
-      id: setup-haskell-cabal
-      name: Setup cabal
-      with:
-        ghc-version: ${{ matrix.ghc }}
-        cabal-version: ${{ matrix.cabal }}
+      - uses: haskell/actions/setup@v1
+        id: setup-haskell-cabal
+        name: Setup cabal
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
 
-    - name: Configure cabal
-      run: |
-        cabal configure --enable-tests --enable-benchmarks
-    - uses: actions/cache@v2
-      name: Cache cabal artifacts
-      with:
-        path: |
-          ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
-          dist-newstyle
-        key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
-        restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+      - name: Configure cabal
+        run: |
+          cabal configure --enable-tests --enable-benchmarks
+      - uses: actions/cache@v2
+        name: Cache cabal artifacts
+        with:
+          path: |
+            ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
+            dist-newstyle
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('cabal.project.freeze') }}
+          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
 
-    - name: Install dependencies
-      run: |
-        cabal update
-        cabal build --only-dependencies --enable-tests --enable-benchmarks
-    - name: Build
-      run: cabal build --enable-tests --enable-benchmarks all
+      - name: Install dependencies
+        run: |
+          cabal update
+          cabal build --only-dependencies --enable-tests --enable-benchmarks
+      - name: Build
+        run: cabal build --enable-tests --enable-benchmarks all
 
-    - name: Run tests
-      env:
-        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
-      run: cabal test --enable-tests --enable-benchmarks all
+      - name: Run tests
+        env:
+          DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+        run: cabal test --enable-tests --enable-benchmarks all
