@@ -106,13 +106,10 @@ benchmark pg-client-bench
     , base
     , bytestring         >=0.10
     , file-embed
-    , hashable
     , hasql
     , hasql-pool
     , hasql-transaction
     , mtl
     , pg-client
-    , postgresql-libpq
     , tasty-bench
     , text
-    , text-builder       >=0.6
