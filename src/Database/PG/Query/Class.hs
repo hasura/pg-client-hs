@@ -498,7 +498,7 @@ instance ToPrepArg Day where
 instance ToPrepArg UUID.UUID where
   toPrepVal = toPrepValHelper PTI.uuid PE.uuid
 
-newtype JSON = JSON J.Value 
+newtype JSON = JSON J.Value
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 
