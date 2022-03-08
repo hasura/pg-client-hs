@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
@@ -52,14 +53,17 @@ data WithCount a = WithCount
   { wcCount :: Word64,
     wcValue :: a
   }
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 data WithReturning a = WithReturning
   { wrCount :: Word64,
     wrResults :: Maybe a
   }
 
-newtype SingleRow a = SingleRow {getRow :: a} deriving (Show, Eq)
+newtype SingleRow a = SingleRow
+  { getRow :: a
+  }
+  deriving stock (Eq, Show)
 
 newtype AltJ a = AltJ {getAltJ :: a}
 
@@ -152,7 +156,7 @@ instance FromRes Discard where
     return $ Discard ()
 
 newtype Discard = Discard ()
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 parseWord64 :: B.ByteString -> Either T.Text Word64
 parseWord64 b = either buildE return parsed
@@ -494,9 +498,13 @@ instance ToPrepArg Day where
 instance ToPrepArg UUID.UUID where
   toPrepVal = toPrepValHelper PTI.uuid PE.uuid
 
-newtype JSON = JSON J.Value deriving (Eq, Show, Hashable)
+newtype JSON = JSON J.Value 
+  deriving stock (Eq, Show)
+  deriving newtype (Hashable)
 
-newtype JSONB = JSONB J.Value deriving (Eq, Show, Hashable)
+newtype JSONB = JSONB J.Value
+  deriving stock (Eq, Show)
+  deriving newtype (Hashable)
 
 instance ToPrepArg JSON where
   toPrepVal (JSON j) = toPrepValHelper PTI.json PE.json_ast j
