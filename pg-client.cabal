@@ -25,7 +25,12 @@ common common-all
   -- NOTE: '-Wno-prepositive-qualified-module' is currently a workaround for
   -- https://github.com/haskell/cabal/pull/7352
   ghc-options:
-    -Wall
+    -Weverything -Wno-missing-exported-signatures
+    -Wno-missing-import-lists -Wno-missing-export-lists
+    -Wno-missed-specialisations -Wno-all-missed-specializations
+    -Wno-unsafe -Wno-safe -Wno-missing-safe-haskell-mode
+    -Wno-missing-local-signatures -Wno-monomorphism-restriction
+    -Wno-prepositive-qualified-module
 
   default-language:   Haskell2010
   default-extensions:
