@@ -1,3 +1,4 @@
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
@@ -30,12 +31,13 @@ import Prelude
 -------------------------------------------------------------------------------
 
 newtype PGChannel = PGChannel {getChannelTxt :: T.Text}
-  deriving (Show, Eq, IsString)
+  deriving stock (Eq, Show)
+  deriving newtype (IsString)
 
 data PGNotifyEvent
   = PNEOnStart
   | PNEPQNotify !PQ.Notify
-  deriving (Show)
+  deriving stock (Show)
 
 type NotifyHandler = PGNotifyEvent -> IO ()
 
