@@ -40,6 +40,8 @@ module Database.PG.Query.Transaction
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Morph (MFunctor, hoist)
@@ -55,6 +57,9 @@ import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Exts
 import Language.Haskell.TH.Syntax (Lift)
 import Text.Builder qualified as TB
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data TxIsolation
   = ReadCommitted

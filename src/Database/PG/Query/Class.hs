@@ -20,6 +20,8 @@ module Database.PG.Query.Class
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Monad.Except
 import Control.Monad.Identity
 import Data.Aeson qualified as J
@@ -42,6 +44,9 @@ import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Exts
 import PostgreSQL.Binary.Decoding qualified as PD
 import PostgreSQL.Binary.Encoding qualified as PE
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data WithCount a = WithCount
   { wcCount :: Word64,

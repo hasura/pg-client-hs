@@ -13,6 +13,8 @@ module Database.PG.Query.Listen
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Exception (displayException, try)
 import Control.Monad.Except
 import Control.Monad.Trans.Control
@@ -23,6 +25,9 @@ import Database.PG.Query.Pool
 import Database.PG.Query.Transaction
 import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Conc.IO (threadWaitRead)
+import Prelude
+
+-------------------------------------------------------------------------------
 
 newtype PGChannel = PGChannel {getChannelTxt :: T.Text}
   deriving (Show, Eq, IsString)

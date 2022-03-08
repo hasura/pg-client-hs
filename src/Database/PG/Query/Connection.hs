@@ -37,6 +37,8 @@ module Database.PG.Query.Connection
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, catch, throwIO)
 import Control.Monad.Except
@@ -60,6 +62,9 @@ import Data.Word
 import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Exts
 import GHC.Generics
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data ConnOptions = ConnOptions
   { connHost :: !String,

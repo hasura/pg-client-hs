@@ -33,6 +33,8 @@ module Database.PG.Query.Pool
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Control
@@ -52,6 +54,9 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import System.Metrics.Distribution (Distribution)
 import System.Metrics.Distribution qualified as EKG.Distribution
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data PGPool = PGPool
   { -- | the underlying connection pool
