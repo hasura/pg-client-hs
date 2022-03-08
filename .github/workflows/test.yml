@@ -69,7 +69,7 @@ jobs:
         run: |
           ${CABAL} build \
             --enable-tests \
-            --enable-benchmarks
+            --enable-benchmarks \
             all
 
       - name: Run tests
