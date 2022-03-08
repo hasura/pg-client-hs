@@ -6,6 +6,8 @@
 
 module Main (main) where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad.Except (MonadTrans (lift), runExceptT)
 import Data.ByteString.Char8 qualified as BS
@@ -14,6 +16,9 @@ import Interrupt (specInterrupt)
 import System.Environment qualified as Env
 import Test.Hspec
 import Timeout (specTimeout)
+import Prelude
+
+-------------------------------------------------------------------------------
 
 {- Note [Running tests]
 ~~~~~~~~~~~~~~~~~~~~~~~

@@ -5,6 +5,8 @@
 
 module Timeout (specTimeout) where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent.Async (async, wait)
 import Control.Monad.Except (runExceptT)
 import Control.Monad.Identity (Identity (..), runIdentity)
@@ -15,6 +17,9 @@ import Database.PG.Query
 import System.Environment qualified as Env
 import System.Timeout (timeout)
 import Test.Hspec
+import Prelude
+
+-------------------------------------------------------------------------------
 
 specTimeout :: Spec
 specTimeout = before initDB $ do

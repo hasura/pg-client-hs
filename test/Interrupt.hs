@@ -5,6 +5,8 @@
 
 module Interrupt (specInterrupt) where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent
   ( MVar,
     newEmptyMVar,
@@ -20,6 +22,8 @@ import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import System.Timeout (timeout)
 import Test.Hspec
 import Prelude hiding (log)
+
+-------------------------------------------------------------------------------
 
 specInterrupt :: Spec
 specInterrupt = do
