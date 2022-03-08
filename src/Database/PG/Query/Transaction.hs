@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveLift #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -40,6 +41,8 @@ module Database.PG.Query.Transaction
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Monad.Base
 import Control.Monad.Except
 import Control.Monad.Morph (MFunctor, hoist)
@@ -55,12 +58,15 @@ import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Exts
 import Language.Haskell.TH.Syntax (Lift)
 import Text.Builder qualified as TB
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data TxIsolation
   = ReadCommitted
   | RepeatableRead
   | Serializable
-  deriving (Eq, Lift)
+  deriving stock (Eq, Lift)
 
 instance Show TxIsolation where
   {-# INLINE show #-}
@@ -71,7 +77,7 @@ instance Show TxIsolation where
 data TxAccess
   = ReadWrite
   | ReadOnly
-  deriving (Eq, Lift)
+  deriving stock (Eq, Lift)
 
 instance Show TxAccess where
   {-# INLINE show #-}
@@ -80,8 +86,18 @@ instance Show TxAccess where
 
 type TxMode = (TxIsolation, Maybe TxAccess)
 
-newtype TxET e m a = TxET {txHandler :: ReaderT PGConn (ExceptT e m) a}
-  deriving (Functor, Applicative, Monad, MonadError e, MonadIO, MonadReader PGConn, MonadFix)
+newtype TxET e m a = TxET
+  { txHandler :: ReaderT PGConn (ExceptT e m) a
+  }
+  deriving newtype
+    ( Functor,
+      Applicative,
+      Monad,
+      MonadError e,
+      MonadIO,
+      MonadReader PGConn,
+      MonadFix
+    )
 
 instance MonadTrans (TxET e) where
   lift = TxET . lift . lift
@@ -110,7 +126,7 @@ catchE f action = TxET $ mapReaderT (withExceptT f) $ txHandler action
 data PGTxErr
   = PGTxErr !T.Text ![PrepArg] !Bool !PGErrInternal
   -- PGCustomErr !T.Text
-  deriving (Eq)
+  deriving stock (Eq)
 
 {-# INLINE getPGStmtErr #-}
 getPGStmtErr :: PGTxErr -> Maybe PGStmtErrDetail
@@ -134,8 +150,11 @@ instance Show PGTxErr where
 execTx :: PGConn -> TxET e m a -> ExceptT e m a
 execTx conn tx = runReaderT (txHandler tx) conn
 
-newtype Query = Query {getQueryText :: T.Text}
-  deriving (Show, Eq, Hashable, IsString, ToJSON)
+newtype Query = Query
+  { getQueryText :: T.Text
+  }
+  deriving stock (Eq, Show)
+  deriving newtype (Hashable, IsString, ToJSON)
 
 {-# INLINE fromText #-}
 fromText :: T.Text -> Query

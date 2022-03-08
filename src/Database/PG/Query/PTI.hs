@@ -2,8 +2,13 @@
 
 module Database.PG.Query.PTI where
 
+-------------------------------------------------------------------------------
+
 import Data.Word
 import Database.PostgreSQL.LibPQ qualified as PQ
+import Prelude
+
+-------------------------------------------------------------------------------
 
 mkOid :: Word32 -> PQ.Oid
 mkOid = PQ.Oid . fromIntegral

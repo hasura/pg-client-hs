@@ -5,6 +5,8 @@ module Control.Concurrent.Interrupt
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent.Async (async, asyncThreadId, wait, waitCatch)
 import Control.Exception
   ( SomeAsyncException,
@@ -14,6 +16,9 @@ import Control.Exception
     throwTo,
     try,
   )
+import Prelude
+
+-------------------------------------------------------------------------------
 
 -- | interruptOnAsyncexception runs the given action in in a separate thread,
 -- running the given cancel action before passing on any asynchronous

@@ -1,9 +1,13 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Interrupt (specInterrupt) where
+
+-------------------------------------------------------------------------------
 
 import Control.Concurrent
   ( MVar,
@@ -13,13 +17,15 @@ import Control.Concurrent
     tryReadMVar,
   )
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
-import Control.Exception.Safe
+import Control.Exception.Safe (Exception, onException, throwIO, uninterruptibleMask_)
 import Control.Monad (liftM2, when)
-import Data.IORef
+import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import System.Timeout (timeout)
-import Test.Hspec
+import Test.Hspec (Spec, describe, it, shouldBe, shouldThrow)
 import Prelude hiding (log)
+
+-------------------------------------------------------------------------------
 
 specInterrupt :: Spec
 specInterrupt = do
@@ -177,14 +183,12 @@ getCancel = do
   return (cancel, cancelled)
 
 data CancelException = CancelException
-  deriving (Show, Eq)
-
-instance Exception CancelException
+  deriving stock (Eq, Show)
+  deriving anyclass (Exception)
 
 data ActionException = ActionException
-  deriving (Show, Eq)
-
-instance Exception ActionException
+  deriving stock (Eq, Show)
+  deriving anyclass (Exception)
 
 type Log = [(NominalDiffTime, String)]
 

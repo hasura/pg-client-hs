@@ -6,14 +6,19 @@
 
 module Main (main) where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent (forkIO, threadDelay)
 import Control.Monad.Except (MonadTrans (lift), runExceptT)
 import Data.ByteString.Char8 qualified as BS
 import Database.PG.Query
 import Interrupt (specInterrupt)
 import System.Environment qualified as Env
-import Test.Hspec
+import Test.Hspec (describe, hspec, it, shouldReturn)
 import Timeout (specTimeout)
+import Prelude
+
+-------------------------------------------------------------------------------
 
 {- Note [Running tests]
 ~~~~~~~~~~~~~~~~~~~~~~~
@@ -53,7 +58,11 @@ mkPool = do
     logger = mempty
     connParams = ConnParams 1 1 60 True Nothing (Just 3) False
 
-withFreshPool :: (FromPGTxErr e, FromPGConnErr e) => PGPool -> IO a -> IO (Either e a)
+withFreshPool ::
+  (FromPGConnErr e) =>
+  PGPool ->
+  IO a ->
+  IO (Either e a)
 withFreshPool pool action =
   runExceptT
     . withConn pool

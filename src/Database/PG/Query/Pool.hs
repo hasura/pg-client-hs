@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
@@ -33,6 +35,8 @@ module Database.PG.Query.Pool
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Exception
 import Control.Monad.Except
 import Control.Monad.Trans.Control
@@ -52,6 +56,9 @@ import Language.Haskell.TH.Quote
 import Language.Haskell.TH.Syntax
 import System.Metrics.Distribution (Distribution)
 import System.Metrics.Distribution qualified as EKG.Distribution
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data PGPool = PGPool
   { -- | the underlying connection pool
@@ -87,7 +94,7 @@ data ConnParams = ConnParams
     -- | Transactions will be cancelled if an asynchronous exception is received.
     cpCancel :: !Bool
   }
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 defaultConnParams :: ConnParams
 defaultConnParams = ConnParams 1 20 60 True Nothing Nothing True
@@ -131,7 +138,7 @@ destroyPGPool = RP.destroyAllResources . _pool
 data PGExecErr
   = PGExecErrConn !PGConnErr
   | PGExecErrTx !PGTxErr
-  deriving (Eq)
+  deriving stock (Eq)
 
 instance ToJSON PGExecErr where
   toJSON (PGExecErrConn pce) = toJSON pce
@@ -196,7 +203,6 @@ asTransaction txm f pgConn = do
 withConn ::
   ( MonadIO m,
     MonadBaseControl IO m,
-    FromPGTxErr e,
     FromPGConnErr e
   ) =>
   PGPool ->
@@ -250,7 +256,6 @@ runTx pool txm tx = do
 runTx' ::
   ( MonadIO m,
     MonadBaseControl IO m,
-    FromPGTxErr e,
     FromPGConnErr e
   ) =>
   PGPool ->
@@ -312,9 +317,8 @@ withExpiringPGconn pool f = do
 -- to allow callback to signal that the connection should be destroyed and we
 -- should retry.
 data PGConnectionStale = PGConnectionStale
-  deriving (Show)
-
-instance Exception PGConnectionStale
+  deriving stock (Show)
+  deriving anyclass (Exception)
 
 -- cribbed from lifted-base
 handleLifted :: (MonadBaseControl IO m, Exception e) => (e -> m a) -> m a -> m a

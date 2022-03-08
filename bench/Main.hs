@@ -3,9 +3,10 @@
 
 module Main where
 
+-------------------------------------------------------------------------------
+
 import Control.Exception qualified as E
 import Control.Monad.Except
-import Criterion.Main qualified as C
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
 import Data.FileEmbed qualified as FE
@@ -21,6 +22,10 @@ import Hasql.Statement qualified as HS
 import Hasql.Transaction qualified as HT
 import Hasql.Transaction.Sessions qualified as HT
 import System.IO.Error qualified as E
+import Test.Tasty.Bench qualified as C
+import Prelude
+
+-------------------------------------------------------------------------------
 
 withEx :: (Show e) => IO (Either e a) -> IO a
 withEx action =

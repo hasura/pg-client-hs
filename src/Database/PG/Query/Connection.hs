@@ -1,4 +1,6 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE LambdaCase #-}
@@ -37,6 +39,8 @@ module Database.PG.Query.Connection
   )
 where
 
+-------------------------------------------------------------------------------
+
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, catch, throwIO)
 import Control.Monad.Except
@@ -60,6 +64,9 @@ import Data.Word
 import Database.PostgreSQL.LibPQ qualified as PQ
 import GHC.Exts
 import GHC.Generics
+import Prelude
+
+-------------------------------------------------------------------------------
 
 data ConnOptions = ConnOptions
   { connHost :: !String,
@@ -69,26 +76,26 @@ data ConnOptions = ConnOptions
     connDatabase :: !String,
     connOptions :: !(Maybe String)
   }
-  deriving (Eq, Read, Show)
+  deriving stock (Eq, Read, Show)
 
 data ConnDetails
   = CDDatabaseURI !DB.ByteString
   | CDOptions !ConnOptions
-  deriving (Show, Read, Eq)
+  deriving stock (Eq, Read, Show)
 
 data ConnInfo = ConnInfo
   { ciRetries :: !Int,
     ciDetails :: !ConnDetails
   }
-  deriving (Show, Read, Eq)
+  deriving stock (Eq, Read, Show)
 
 newtype PGConnErr = PGConnErr {getConnErr :: DT.Text}
-  deriving (Show, Eq, ToJSON)
-
-instance Exception PGConnErr
+  deriving stock (Eq, Show)
+  deriving newtype (ToJSON)
+  deriving anyclass (Exception)
 
 newtype PGExecStatus = PGExecStatus PQ.ExecStatus
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 instance ToJSON PGExecStatus where
   toJSON (PGExecStatus pqStatus) =
@@ -100,7 +107,7 @@ type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
 newtype PGLogEvent
   = PLERetryMsg DT.Text
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 type PGLogger = PGLogEvent -> IO ()
 
@@ -257,7 +264,7 @@ data PGStmtErrDetail = PGStmtErrDetail
     edDescription :: !(Maybe DT.Text),
     edHint :: !(Maybe DT.Text)
   }
-  deriving (Show, Eq, Generic)
+  deriving stock (Eq, Generic, Show)
 
 instance ToJSON PGStmtErrDetail where
   toJSON = genericToJSON $ aesonDrop 2 snakeCase
@@ -265,7 +272,7 @@ instance ToJSON PGStmtErrDetail where
 data ResultOk
   = ResultOkEmpty !PQ.Result
   | ResultOkData !PQ.Result
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 {-# INLINE getPQRes #-}
 getPQRes :: ResultOk -> PQ.Result
@@ -356,9 +363,8 @@ assertResCmd conn mRes = do
         PGIUnexpected "cmd expected; tuples found"
 
 data PGCancelErr = PGCancelErr DT.Text
-  deriving (Show, Eq)
-
-instance Exception PGCancelErr
+  deriving stock (Eq, Show)
+  deriving anyclass (Exception)
 
 cancelPG :: PQ.Cancel -> IO ()
 cancelPG c = do
@@ -431,7 +437,7 @@ type RKLookupTable = HI.BasicHashTable LocalKey RemoteKey
 -- Local statement key.
 data LocalKey
   = LocalKey !Template ![Word32]
-  deriving (Show, Eq)
+  deriving stock (Eq, Show)
 
 {-# INLINE localKey #-}
 localKey :: Template -> [PQ.Oid] -> LocalKey
@@ -442,7 +448,8 @@ localKey t ol =
 
 newtype Template
   = Template DB.ByteString
-  deriving (Show, Eq, Hashable)
+  deriving stock (Eq, Show)
+  deriving newtype (Hashable)
 
 {-# INLINE mkTemplate #-}
 mkTemplate :: DT.Text -> Template
@@ -494,7 +501,7 @@ data PGQuery a = PGQuery
 data PGErrInternal
   = PGIUnexpected !DT.Text
   | PGIStatement !PGStmtErrDetail
-  deriving (Eq)
+  deriving stock (Eq)
 
 instance ToJSON PGErrInternal where
   toJSON (PGIUnexpected msg) = toJSON msg

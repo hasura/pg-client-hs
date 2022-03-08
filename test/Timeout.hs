@@ -2,8 +2,11 @@
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
 
 module Timeout (specTimeout) where
+
+-------------------------------------------------------------------------------
 
 import Control.Concurrent.Async (async, wait)
 import Control.Monad.Except (runExceptT)
@@ -14,7 +17,10 @@ import Data.Time (diffUTCTime, getCurrentTime)
 import Database.PG.Query
 import System.Environment qualified as Env
 import System.Timeout (timeout)
-import Test.Hspec
+import Test.Hspec (Spec, before, describe, it, shouldBe, shouldReturn, shouldSatisfy)
+import Prelude
+
+-------------------------------------------------------------------------------
 
 specTimeout :: Spec
 specTimeout = before initDB $ do
