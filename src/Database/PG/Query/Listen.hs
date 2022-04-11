@@ -24,6 +24,7 @@ import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Control (MonadBaseControl)
 import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Data.Kind (Type)
 import Data.String (IsString)
 import Data.Text qualified as T
 import Database.PG.Query.Connection
@@ -34,15 +35,18 @@ import Prelude
 
 -------------------------------------------------------------------------------
 
+type PGChannel :: Type
 newtype PGChannel = PGChannel {getChannelTxt :: T.Text}
   deriving stock (Eq, Show)
   deriving newtype (IsString)
 
+type PGNotifyEvent :: Type
 data PGNotifyEvent
   = PNEOnStart
   | PNEPQNotify !PQ.Notify
   deriving stock (Show)
 
+type NotifyHandler :: Type
 type NotifyHandler = PGNotifyEvent -> IO ()
 
 -- | listen on given channel

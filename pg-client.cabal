@@ -36,6 +36,7 @@ common common-all
   default-extensions:
     NoImplicitPrelude
     ImportQualifiedPost
+    StandaloneKindSignatures
 
 library
   import:          common-all
