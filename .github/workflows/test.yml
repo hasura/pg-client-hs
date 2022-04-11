@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        ghc: [ "8.10.7" ]
+        ghc: [ "8.10.7", "9.2.2" ]
         cabal: [ "latest" ] 
 
     services:
@@ -53,6 +53,7 @@ jobs:
         run: |
           make update PROJECT='ci/${{ matrix.ghc }}.project'
           make build-deps PROJECT='ci/${{ matrix.ghc }}.project'
+
       - name: Build
         run: |
           make build-all PROJECT='ci/${{ matrix.ghc }}.project'
