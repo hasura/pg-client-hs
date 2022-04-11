@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleContexts #-}
+{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
@@ -48,6 +49,7 @@ import Data.Aeson (ToJSON (toJSON))
 import Data.ByteString qualified as BS
 import Data.HashTable.IO qualified as HIO
 import Data.IORef (newIORef)
+import Data.Kind (Constraint, Type)
 import Data.Pool qualified as RP
 import Data.String (fromString)
 import Data.Text qualified as Text
@@ -57,13 +59,14 @@ import Database.PG.Query.Connection
 import Database.PG.Query.Transaction
 import Database.PostgreSQL.LibPQ qualified as PQ
 import Language.Haskell.TH.Quote (QuasiQuoter (..))
-import Language.Haskell.TH.Syntax (Exp, Q, qAddDependentFile, runIO)
+import Language.Haskell.TH.Syntax (Exp, Q, lift, qAddDependentFile, runIO)
 import System.Metrics.Distribution (Distribution)
 import System.Metrics.Distribution qualified as EKG.Distribution
 import Prelude
 
 -------------------------------------------------------------------------------
 
+type PGPool :: Type
 data PGPool = PGPool
   { -- | the underlying connection pool
     _pool :: !(RP.Pool PGConn),
@@ -76,6 +79,7 @@ pgPoolStats = _stats
 
 -- | Actual ekg gauges and other metrics are not created here, since those depend on
 -- a store and it's much simpler to perform the sampling of the distribution from within graphql-engine.
+type PGPoolStats :: Type
 data PGPoolStats = PGPoolStats
   { -- | time taken to acquire new connections from postgres
     _dbConnAcquireLatency :: !Distribution,
@@ -85,6 +89,7 @@ data PGPoolStats = PGPoolStats
 getInUseConnections :: PGPool -> IO Int
 getInUseConnections = RP.getInUseResourceCount . _pool
 
+type ConnParams :: Type
 data ConnParams = ConnParams
   { cpStripes :: !Int,
     cpConns :: !Int,
@@ -139,6 +144,7 @@ initPGPool ci cp logger = do
 destroyPGPool :: PGPool -> IO ()
 destroyPGPool = RP.destroyAllResources . _pool
 
+type PGExecErr :: Type
 data PGExecErr
   = PGExecErrConn !PGConnErr
   | PGExecErrTx !PGTxErr
@@ -163,9 +169,8 @@ beginTx (i, w) =
   unitQ query () True
   where
     query =
-      fromText $
-        Text.pack
-          ("BEGIN " <> show i <> " " <> maybe "" show w)
+      fromText . Text.pack $
+        ("BEGIN " <> show i <> " " <> maybe "" show w)
 
 commitTx :: (MonadIO m) => TxT m ()
 commitTx =
@@ -175,9 +180,11 @@ abortTx :: (MonadIO m) => TxT m ()
 abortTx =
   unitQ "ABORT" () True
 
+type FromPGTxErr :: Type -> Constraint
 class FromPGTxErr e where
   fromPGTxErr :: PGTxErr -> e
 
+type FromPGConnErr :: Type -> Constraint
 class FromPGConnErr e where
   fromPGConnErr :: PGConnErr -> e
 
@@ -269,7 +276,12 @@ runTx' pool tx = do
   withConn pool $ \connRsrc -> execTx connRsrc tx
 
 sql :: QuasiQuoter
-sql = QuasiQuoter {quoteExp = \a -> [|fromString a|]}
+sql = QuasiQuoter {quoteExp, quotePat, quoteType, quoteDec}
+  where
+    quotePat _ = error "executableDoc does not support quoting patterns"
+    quoteType _ = error "executableDoc does not support quoting types"
+    quoteDec _ = error "executableDoc does not support quoting declarations"
+    quoteExp s = [|fromString $(lift s)|]
 
 -- | Construct a 'Query' at compile-time from some given file.
 --
@@ -282,11 +294,11 @@ sqlFromFile fp = do
   bytes <- qAddDependentFile fp >> runIO (BS.readFile fp)
   case decodeUtf8' bytes of
     Left err -> Exc.impureThrow $! err
-    Right txtContents ->
+    Right txtContents -> do
       -- NOTE: This is (effectively) the same implementation as the 'Lift'
       -- instance for 'Text' from 'th-lift-instances'.
       let strContents = Text.unpack txtContents
-       in [|fromText . Text.pack $ strContents|]
+      [|fromText $ Text.pack $(lift strContents)|]
 
 -- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
 -- optionally expiring the connection after a configurable amount of time so
@@ -320,6 +332,7 @@ withExpiringPGconn pool f = do
 -- | Used internally (see 'withExpiringPGconn'), but exported in case we need
 -- to allow callback to signal that the connection should be destroyed and we
 -- should retry.
+type PGConnectionStale :: Type
 data PGConnectionStale = PGConnectionStale
   deriving stock (Show)
   deriving anyclass (Exception)

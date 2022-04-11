@@ -34,6 +34,7 @@ import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
 import Data.Int (Int16, Int32, Int64)
+import Data.Kind (Constraint, Type)
 import Data.Scientific (Scientific)
 import Data.String (fromString)
 import Data.Text (Text)
@@ -52,22 +53,26 @@ import Prelude
 
 -------------------------------------------------------------------------------
 
+type WithCount :: Type -> Type
 data WithCount a = WithCount
   { wcCount :: Word64,
     wcValue :: a
   }
   deriving stock (Eq, Show)
 
+type WithReturning :: Type -> Type
 data WithReturning a = WithReturning
   { wrCount :: Word64,
     wrResults :: Maybe a
   }
 
+type SingleRow :: Type -> Type
 newtype SingleRow a = SingleRow
   { getRow :: a
   }
   deriving stock (Eq, Show)
 
+type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
 mapEither :: (a -> c) -> (b -> d) -> Either a b -> Either c d
@@ -77,6 +82,7 @@ mapEither _ f (Right b) = Right $ f b
 instance (FromJSON a) => FromCol (AltJ a) where
   fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict)
 
+type FromCol :: Type -> Constraint
 class FromCol a where
   fromCol ::
     Maybe ByteString ->
@@ -140,6 +146,7 @@ instance FromCol a => FromCol (Maybe a) where
   fromCol Nothing = return Nothing
   fromCol bs = Just <$> fromCol bs
 
+type FromRes :: Type -> Constraint
 class FromRes a where
   fromRes :: ResultOk -> ExceptT Text IO a
 
@@ -158,6 +165,7 @@ instance FromRes Discard where
   fromRes (ResultOkData _) =
     return $ Discard ()
 
+type Discard :: Type
 newtype Discard = Discard ()
   deriving stock (Eq, Show)
 
@@ -191,8 +199,10 @@ instance FromRes a => FromRes (WithCount a) where
     c <- extractCount res
     return $ WithCount c a
 
+type ResultMatrix :: Type
 type ResultMatrix = V.Vector ResultRow
 
+type ResultRow :: Type
 type ResultRow = V.Vector (Maybe ByteString)
 
 {-# INLINE colInt #-}
@@ -427,17 +437,18 @@ instance
       return (a, b, c, d, e, f, g, h, i, j, k, l)
     c -> throwError $ colMismatch 12 c
 
+type FromRow :: Type -> Constraint
 class FromRow a where
-  fromRow ::
-    ResultRow ->
-    Either Text a
+  fromRow :: ResultRow -> Either Text a
 
+type ToPrepArgs :: Type -> Constraint
 class ToPrepArgs a where
   toPrepArgs :: a -> [PrepArg]
 
 instance ToPrepArgs () where
   toPrepArgs _ = []
 
+type ToPrepArg :: Type -> Constraint
 class ToPrepArg a where
   toPrepVal :: a -> PrepArg
 
@@ -501,10 +512,12 @@ instance ToPrepArg Day where
 instance ToPrepArg UUID where
   toPrepVal = toPrepValHelper PTI.uuid PE.uuid
 
+type JSON :: Type
 newtype JSON = JSON Value
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 
+type JSONB :: Type
 newtype JSONB = JSONB Value
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
