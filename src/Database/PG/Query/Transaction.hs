@@ -43,19 +43,24 @@ where
 
 -------------------------------------------------------------------------------
 
-import Control.Monad.Base
-import Control.Monad.Except
+import Control.Monad.Base (MonadBase (liftBase))
+import Control.Monad.Except (MonadError)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Morph (MFunctor, hoist)
-import Control.Monad.Reader
-import Control.Monad.Trans.Control
-import Data.Aeson
-import Data.Aeson.Text
-import Data.Hashable
-import Data.Text qualified as T
+import Control.Monad.Reader (MonadReader, asks)
+import Control.Monad.Trans.Class (MonadTrans (lift))
+import Control.Monad.Trans.Control (MonadBaseControl (StM, liftBaseWith, restoreM))
+import Control.Monad.Trans.Except (ExceptT, withExceptT)
+import Control.Monad.Trans.Reader (ReaderT (..), mapReaderT, runReaderT)
+import Data.Aeson (ToJSON (toJSON), object, (.=))
+import Data.Aeson.Text (encodeToLazyText)
+import Data.Hashable (Hashable)
+import Data.String (IsString)
+import Data.Text (Text)
 import Database.PG.Query.Class
 import Database.PG.Query.Connection
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Exts
 import Language.Haskell.TH.Syntax (Lift)
 import Text.Builder qualified as TB
 import Prelude
@@ -124,7 +129,7 @@ catchE :: (Functor m) => (e -> e') -> TxET e m a -> TxET e' m a
 catchE f action = TxET $ mapReaderT (withExceptT f) $ txHandler action
 
 data PGTxErr
-  = PGTxErr !T.Text ![PrepArg] !Bool !PGErrInternal
+  = PGTxErr !Text ![PrepArg] !Bool !PGErrInternal
   -- PGCustomErr !T.Text
   deriving stock (Eq)
 
@@ -151,13 +156,13 @@ execTx :: PGConn -> TxET e m a -> ExceptT e m a
 execTx conn tx = runReaderT (txHandler tx) conn
 
 newtype Query = Query
-  { getQueryText :: T.Text
+  { getQueryText :: Text
   }
   deriving stock (Eq, Show)
   deriving newtype (Hashable, IsString, ToJSON)
 
 {-# INLINE fromText #-}
-fromText :: T.Text -> Query
+fromText :: Text -> Query
 fromText = Query
 
 {-# INLINE fromBuilder #-}
@@ -228,7 +233,7 @@ multiQ ::
   TxT m a
 multiQ = multiQE id
 
-withNotices :: (MonadIO m) => TxT m a -> TxT m (a, [T.Text])
+withNotices :: (MonadIO m) => TxT m a -> TxT m (a, [Text])
 withNotices tx = do
   conn <- asks pgPQConn
   setToNotice
