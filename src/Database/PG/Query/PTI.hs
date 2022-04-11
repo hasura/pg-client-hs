@@ -4,7 +4,7 @@ module Database.PG.Query.PTI where
 
 -------------------------------------------------------------------------------
 
-import Data.Word
+import Data.Word (Word32)
 import Database.PostgreSQL.LibPQ qualified as PQ
 import Prelude
 
