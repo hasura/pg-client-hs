@@ -16,16 +16,20 @@ where
 
 -------------------------------------------------------------------------------
 
+import Control.Concurrent (threadWaitRead)
 import Control.Exception (displayException, try)
-import Control.Monad.Except
-import Control.Monad.Trans.Control
-import Data.String
+import Control.Monad (forever, unless)
+import Control.Monad.Except (MonadError (throwError))
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Control (MonadBaseControl)
+import Control.Monad.Trans.Except (ExceptT, runExceptT)
+import Data.String (IsString)
 import Data.Text qualified as T
 import Database.PG.Query.Connection
 import Database.PG.Query.Pool
 import Database.PG.Query.Transaction
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Conc.IO (threadWaitRead)
 import Prelude
 
 -------------------------------------------------------------------------------
