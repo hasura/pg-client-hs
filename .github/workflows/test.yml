@@ -40,9 +40,6 @@ jobs:
           ghc-version: ${{ matrix.ghc }}
           cabal-version: ${{ matrix.cabal }}
 
-      - name: Configure cabal
-        run: |
-          make configure PROJECT='ci/${{ matrix.ghc }}.project'
       - uses: actions/cache@v2
         name: Cache cabal artifacts
         with:
