@@ -20,6 +20,7 @@ import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, onException, throwIO, uninterruptibleMask_)
 import Control.Monad (liftM2, when)
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
+import Data.Kind (Type)
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import System.Timeout (timeout)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldThrow)
@@ -182,14 +183,17 @@ getCancel = do
       cancelled = maybe False (const True) <$> tryReadMVar c
   return (cancel, cancelled)
 
+type CancelException :: Type
 data CancelException = CancelException
   deriving stock (Eq, Show)
   deriving anyclass (Exception)
 
+type ActionException :: Type
 data ActionException = ActionException
   deriving stock (Eq, Show)
   deriving anyclass (Exception)
 
+type Log :: Type
 type Log = [(NominalDiffTime, String)]
 
 roundTo :: Int -> NominalDiffTime -> Int
