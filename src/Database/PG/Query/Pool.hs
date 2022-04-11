@@ -37,7 +37,8 @@ where
 
 -------------------------------------------------------------------------------
 
-import Control.Exception
+import Control.Exception.Safe (Exception, Handler (..))
+import Control.Exception.Safe qualified as Exc
 import Control.Monad (when)
 import Control.Monad.Except (MonadError (catchError, throwError))
 import Control.Monad.IO.Class (MonadIO (liftIO))
@@ -222,9 +223,9 @@ catchConnErr ::
 catchConnErr action =
   control $ \runInIO ->
     runInIO action
-      `catches` [ Handler (runInIO . handler),
-                  Handler (runInIO . handleTimeout)
-                ]
+      `Exc.catches` [ Handler (runInIO . handler),
+                      Handler (runInIO . handleTimeout)
+                    ]
   where
     handler = mkConnExHandler action fromPGConnErr
 
@@ -280,7 +281,7 @@ sqlFromFile :: FilePath -> Q Exp
 sqlFromFile fp = do
   bytes <- qAddDependentFile fp >> runIO (BS.readFile fp)
   case decodeUtf8' bytes of
-    Left err -> throw $! err
+    Left err -> Exc.impureThrow $! err
     Right txtContents ->
       -- NOTE: This is (effectively) the same implementation as the 'Lift'
       -- instance for 'Text' from 'th-lift-instances'.
@@ -312,7 +313,7 @@ withExpiringPGconn pool f = do
       when connectionStale $ do
         -- Throwing is the only way to signal to resource pool to discard the
         -- connection at this time, so we need to use it for control flow:
-        throw PGConnectionStale
+        Exc.impureThrow PGConnectionStale
       -- else proceed with callback:
       f connRsrc
 
@@ -325,4 +326,7 @@ data PGConnectionStale = PGConnectionStale
 
 -- cribbed from lifted-base
 handleLifted :: (MonadBaseControl IO m, Exception e) => (e -> m a) -> m a -> m a
-handleLifted handler ma = control $ \runInIO -> handle (runInIO . handler) (runInIO ma)
+handleLifted handler ma = control $ \runInIO ->
+  Exc.handle
+    (runInIO . handler)
+    (runInIO ma)

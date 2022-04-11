@@ -17,7 +17,7 @@ where
 -------------------------------------------------------------------------------
 
 import Control.Concurrent (threadWaitRead)
-import Control.Exception (displayException, try)
+import Control.Exception.Safe (displayException, try)
 import Control.Monad (forever, unless)
 import Control.Monad.Except (MonadError (throwError))
 import Control.Monad.IO.Class (MonadIO (liftIO))
