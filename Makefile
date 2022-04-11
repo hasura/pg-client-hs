@@ -8,6 +8,13 @@ format:
 
 PROJECT = "cabal.project"
 
+.PHONY: freeze
+freeze:
+	cabal freeze \
+	  --project=$(PROJECT) \
+	  --enable-tests \
+	  --enable-benchmarks
+
 .PHONY: configure
 configure:
 	cabal configure \

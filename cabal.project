@@ -1,7 +1,5 @@
 packages: .
 
-allow-newer: ekg-core-0.1.1.7:base, ekg-core-0.1.1.7:ghc-prim
-
 source-repository-package
   type: git
   location: https://github.com/hasura/pool.git

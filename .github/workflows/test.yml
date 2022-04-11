@@ -7,10 +7,6 @@ on:
 jobs:
   ci:
     runs-on: ubuntu-latest
-    env:
-      # TODO: We should add CI-specific build, test, etc. actions to the
-      # 'Makefile' rather than relying on an environment variable.
-      CABAL: cabal --project-file=./ci/ci.project
     strategy:
       matrix:
         ghc: [ "8.10.7" ]
@@ -46,9 +42,7 @@ jobs:
 
       - name: Configure cabal
         run: |
-          ${CABAL} configure \
-            --enable-tests \
-            --enable-benchmarks
+          make configure PROJECT='ci/${{ matrix.ghc }}.project'
       - uses: actions/cache@v2
         name: Cache cabal artifacts
         with:
@@ -60,23 +54,14 @@ jobs:
 
       - name: Install dependencies
         run: |
-          ${CABAL} update
-          ${CABAL} build \
-            --only-dependencies \
-            --enable-tests \
-            --enable-benchmarks
+          make update PROJECT='ci/${{ matrix.ghc }}.project'
+          make build-deps PROJECT='ci/${{ matrix.ghc }}.project'
       - name: Build
         run: |
-          ${CABAL} build \
-            --enable-tests \
-            --enable-benchmarks \
-            all
+          make build-all PROJECT='ci/${{ matrix.ghc }}.project'
 
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
-          ${CABAL} test \
-            --enable-tests \
-            --enable-benchmarks \
-            all
+          make test-all PROJECT='ci/${{ matrix.ghc }}.project'
