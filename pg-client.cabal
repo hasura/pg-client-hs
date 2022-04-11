@@ -93,10 +93,10 @@ test-suite pg-client-test
     , base
     , bytestring
     , hspec
-    , mtl
     , pg-client
     , safe-exceptions
     , time
+    , transformers
 
 benchmark pg-client-bench
   import:         common-all
@@ -110,7 +110,7 @@ benchmark pg-client-bench
     , hasql
     , hasql-pool
     , hasql-transaction
-    , mtl
     , pg-client
     , tasty-bench
     , text
+    , transformers

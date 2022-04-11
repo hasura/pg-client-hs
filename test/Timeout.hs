@@ -9,9 +9,9 @@ module Timeout (specTimeout) where
 -------------------------------------------------------------------------------
 
 import Control.Concurrent.Async (async, wait)
-import Control.Monad.Except (runExceptT)
-import Control.Monad.Identity (Identity (..), runIdentity)
+import Control.Monad.Trans.Except (runExceptT)
 import Data.ByteString.Char8 qualified as BS
+import Data.Functor.Identity (Identity (..), runIdentity)
 import Data.Int (Int32)
 import Data.Time (diffUTCTime, getCurrentTime)
 import Database.PG.Query
