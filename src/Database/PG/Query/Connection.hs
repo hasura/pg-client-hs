@@ -43,11 +43,12 @@ where
 
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, catch, throwIO)
-import Control.Monad.Except (ExceptT, MonadError (throwError), runExceptT, withExceptT)
+import Control.Monad.Except (MonadError (throwError))
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Except (ExceptT, runExceptT, withExceptT)
 import Control.Retry qualified as CR
-import Data.Aeson (ToJSON (..), genericToJSON)
+import Data.Aeson (ToJSON (toJSON), genericToJSON)
 import Data.Aeson.Casing (aesonDrop, snakeCase)
 import Data.Aeson.TH (mkToJSON)
 import Data.Bool (bool)
@@ -58,7 +59,6 @@ import Data.Foldable (for_)
 import Data.HashTable.IO qualified as HIO
 import Data.Hashable (Hashable (hashWithSalt))
 import Data.IORef (IORef, readIORef, writeIORef)
-import Data.Kind (Type)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString (fromString))
 import Data.Text qualified as DT
