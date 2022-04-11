@@ -47,7 +47,8 @@ import Control.Monad.Except (MonadError (throwError))
 import Control.Monad.IO.Class (MonadIO (liftIO))
 import Control.Monad.Trans.Class (lift)
 import Control.Monad.Trans.Except (ExceptT, runExceptT, withExceptT)
-import Control.Retry qualified as CR
+import Control.Retry (RetryPolicyM)
+import Control.Retry qualified as Retry
 import Data.Aeson (ToJSON (toJSON), genericToJSON)
 import Data.Aeson.Casing (aesonDrop, snakeCase)
 import Data.Aeson.TH (mkToJSON)
@@ -61,7 +62,8 @@ import Data.Hashable (Hashable (hashWithSalt))
 import Data.IORef (IORef, readIORef, writeIORef)
 import Data.Maybe (fromMaybe)
 import Data.String (IsString (fromString))
-import Data.Text qualified as DT
+import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Text.Encoding (decodeUtf8With, encodeUtf8)
 import Data.Text.Encoding.Error (lenientDecode)
 import Data.Time (NominalDiffTime, UTCTime)
@@ -93,7 +95,7 @@ data ConnInfo = ConnInfo
   }
   deriving stock (Eq, Read, Show)
 
-newtype PGConnErr = PGConnErr {getConnErr :: DT.Text}
+newtype PGConnErr = PGConnErr {getConnErr :: Text}
   deriving stock (Eq, Show)
   deriving newtype (ToJSON)
   deriving anyclass (Exception)
@@ -105,12 +107,12 @@ instance ToJSON PGExecStatus where
   toJSON (PGExecStatus pqStatus) =
     $(mkToJSON (aesonDrop 0 snakeCase) ''PQ.ExecStatus) pqStatus
 
-type PGRetryPolicyM m = CR.RetryPolicyM m
+type PGRetryPolicyM m = RetryPolicyM m
 
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
 newtype PGLogEvent
-  = PLERetryMsg DT.Text
+  = PLERetryMsg Text
   deriving stock (Eq, Show)
 
 type PGLogger = PGLogEvent -> IO ()
@@ -127,7 +129,7 @@ throwPGConnErr ::
   MonadError PGError m => PGConnErr -> m a
 throwPGConnErr = throwError . Right
 
-readConnErr :: PQ.Connection -> IO DT.Text
+readConnErr :: PQ.Connection -> IO Text
 readConnErr conn = do
   m <- PQ.errorMessage conn
   return $ maybe "(empty connection error message)" lenientDecodeUtf8 m
@@ -140,19 +142,19 @@ pgRetrying ::
   m (Either PGConnErr a) ->
   m a
 pgRetrying resetFn retryP logger action = do
-  eRes <- CR.retrying retryP shouldRetry $ const action
+  eRes <- Retry.retrying retryP shouldRetry $ const action
   either (liftIO . throwIO) return eRes
   where
     shouldRetry rs =
       either (const $ onError rs) (const $ return False)
 
     onError rs = do
-      let retryIterNo = CR.rsIterNumber rs
+      let retryIterNo = Retry.rsIterNumber rs
       liftIO $ do
         logger $
           PLERetryMsg $
             "postgres connection failed, retrying("
-              <> DT.pack (show retryIterNo)
+              <> Text.pack (show retryIterNo)
               <> ")."
         resetFn
       return True
@@ -263,10 +265,10 @@ pgConnString (CDOptions opts) = fromString connstr
 
 data PGStmtErrDetail = PGStmtErrDetail
   { edExecStatus :: !PGExecStatus,
-    edStatusCode :: !(Maybe DT.Text),
-    edMessage :: !(Maybe DT.Text),
-    edDescription :: !(Maybe DT.Text),
-    edHint :: !(Maybe DT.Text)
+    edStatusCode :: !(Maybe Text),
+    edMessage :: !(Maybe Text),
+    edDescription :: !(Maybe Text),
+    edHint :: !(Maybe Text)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -284,7 +286,7 @@ getPQRes (ResultOkEmpty res) = res
 getPQRes (ResultOkData res) = res
 
 {-# INLINE lenientDecodeUtf8 #-}
-lenientDecodeUtf8 :: ByteString -> DT.Text
+lenientDecodeUtf8 :: ByteString -> Text
 lenientDecodeUtf8 = decodeUtf8With lenientDecode
 
 retryOnConnErr ::
@@ -330,7 +332,7 @@ checkResult conn mRes =
         _ ->
           throwPGIntErr $
             PGIUnexpected $
-              "Unexpected execStatus : " <> DT.pack (show st)
+              "Unexpected execStatus : " <> Text.pack (show st)
   where
     isConnOk = do
       connSt <- lift $ PQ.status conn
@@ -366,7 +368,7 @@ assertResCmd conn mRes = do
       throwPGIntErr $
         PGIUnexpected "cmd expected; tuples found"
 
-data PGCancelErr = PGCancelErr DT.Text
+data PGCancelErr = PGCancelErr Text
   deriving stock (Eq, Show)
   deriving anyclass (Exception)
 
@@ -401,8 +403,8 @@ mkPGRetryPolicy ::
   Int ->
   PGRetryPolicyM m
 mkPGRetryPolicy numRetries =
-  CR.limitRetriesByDelay limitDelay $
-    CR.exponentialBackoff baseDelay <> CR.limitRetries numRetries
+  Retry.limitRetriesByDelay limitDelay $
+    Retry.exponentialBackoff baseDelay <> Retry.limitRetries numRetries
   where
     -- limitDelay effectively clamps numRetries to <= 6
     limitDelay = 6 * 1000 * 1000 -- 6 seconds
@@ -456,7 +458,7 @@ newtype Template
   deriving newtype (Hashable)
 
 {-# INLINE mkTemplate #-}
-mkTemplate :: DT.Text -> Template
+mkTemplate :: Text -> Template
 mkTemplate = Template . encodeUtf8
 
 instance Hashable LocalKey where
@@ -499,11 +501,11 @@ data PGQuery a = PGQuery
   { pgqTemplate :: !Template,
     pgqArgs :: [PrepArg],
     pgqPreparable :: Bool,
-    pgqConv :: ResultOk -> ExceptT DT.Text IO a
+    pgqConv :: ResultOk -> ExceptT Text IO a
   }
 
 data PGErrInternal
-  = PGIUnexpected !DT.Text
+  = PGIUnexpected !Text
   | PGIStatement !PGStmtErrDetail
   deriving stock (Eq)
 
@@ -540,7 +542,7 @@ execQuery pgConn pgQuery = do
 execMulti ::
   PGConn ->
   Template ->
-  (ResultOk -> ExceptT DT.Text IO a) ->
+  (ResultOk -> ExceptT Text IO a) ->
   ExceptT PGErrInternal IO a
 execMulti pgConn (Template t) convF = do
   resOk <- retryOnConnErr pgConn $ do
