@@ -6,12 +6,13 @@ module Main where
 -------------------------------------------------------------------------------
 
 import Control.Exception qualified as E
-import Control.Monad.Except
+import Control.Monad (unless)
+import Control.Monad.Trans.Except (runExceptT)
 import Data.ByteString qualified as B
 import Data.ByteString.Char8 qualified as BC
 import Data.FileEmbed qualified as FE
-import Data.Functor.Identity
-import Data.Int
+import Data.Functor.Identity (Identity (..), runIdentity)
+import Data.Int (Int64)
 import Data.Text qualified as T
 import Data.Text.Encoding qualified as TE
 import Database.PG.Query qualified as Q

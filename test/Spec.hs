@@ -9,7 +9,8 @@ module Main (main) where
 -------------------------------------------------------------------------------
 
 import Control.Concurrent (forkIO, threadDelay)
-import Control.Monad.Except (MonadTrans (lift), runExceptT)
+import Control.Monad.Trans.Class (MonadTrans (lift))
+import Control.Monad.Trans.Except (runExceptT)
 import Data.ByteString.Char8 qualified as BS
 import Database.PG.Query
 import Interrupt (specInterrupt)

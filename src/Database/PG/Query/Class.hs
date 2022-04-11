@@ -23,26 +23,29 @@ where
 
 -------------------------------------------------------------------------------
 
-import Control.Monad.Except
-import Control.Monad.Identity
-import Data.Aeson qualified as J
+import Control.Monad.Except (throwError)
+import Control.Monad.IO.Class (liftIO)
+import Control.Monad.Identity (Identity (..))
+import Control.Monad.Trans.Except (ExceptT (..))
+import Data.Aeson (FromJSON, ToJSON, Value, eitherDecodeStrict, encode)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
-import Data.ByteString qualified as B
-import Data.ByteString.Lazy qualified as BL
-import Data.Hashable
-import Data.Int
+import Data.ByteString (ByteString)
+import Data.ByteString.Lazy qualified as Lazy (ByteString)
+import Data.Foldable (for_)
+import Data.Hashable (Hashable)
+import Data.Int (Int16, Int32, Int64)
 import Data.Scientific (Scientific)
-import Data.Text qualified as T
-import Data.Text.Lazy qualified as TL
-import Data.Time
-import Data.UUID qualified as UUID
+import Data.String (fromString)
+import Data.Text (Text)
+import Data.Text.Lazy qualified as Lazy (Text)
+import Data.Time (Day, LocalTime, TimeOfDay, UTCTime)
+import Data.UUID (UUID)
 import Data.Vector qualified as V
 import Data.Vector.Mutable qualified as VM
-import Data.Word
+import Data.Word (Word64)
 import Database.PG.Query.Connection
 import Database.PG.Query.PTI qualified as PTI
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Exts
 import PostgreSQL.Binary.Decoding qualified as PD
 import PostgreSQL.Binary.Encoding qualified as PE
 import Prelude
@@ -71,15 +74,15 @@ mapEither :: (a -> c) -> (b -> d) -> Either a b -> Either c d
 mapEither f _ (Left a) = Left $ f a
 mapEither _ f (Right b) = Right $ f b
 
-instance (J.FromJSON a) => FromCol (AltJ a) where
-  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . J.eitherDecodeStrict)
+instance (FromJSON a) => FromCol (AltJ a) where
+  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict)
 
 class FromCol a where
   fromCol ::
-    Maybe B.ByteString ->
-    Either T.Text a
+    Maybe ByteString ->
+    Either Text a
 
-fromColHelper :: PD.Value a -> Maybe B.ByteString -> Either T.Text a
+fromColHelper :: PD.Value a -> Maybe ByteString -> Either Text a
 fromColHelper f = maybe (throwError "encountered null") (PD.valueParser f)
 
 instance FromCol Int where
@@ -106,16 +109,16 @@ instance FromCol Scientific where
 instance FromCol Char where
   fromCol = fromColHelper PD.char
 
-instance FromCol T.Text where
+instance FromCol Text where
   fromCol = fromColHelper PD.text_strict
 
-instance FromCol TL.Text where
+instance FromCol Lazy.Text where
   fromCol = fromColHelper PD.text_lazy
 
-instance FromCol B.ByteString where
+instance FromCol ByteString where
   fromCol = fromColHelper PD.bytea_strict
 
-instance FromCol BL.ByteString where
+instance FromCol Lazy.ByteString where
   fromCol = fromColHelper PD.bytea_lazy
 
 instance FromCol Day where
@@ -130,7 +133,7 @@ instance FromCol UTCTime where
 instance FromCol Bool where
   fromCol = fromColHelper PD.bool
 
-instance FromCol UUID.UUID where
+instance FromCol UUID where
   fromCol = fromColHelper PD.uuid
 
 instance FromCol a => FromCol (Maybe a) where
@@ -138,7 +141,7 @@ instance FromCol a => FromCol (Maybe a) where
   fromCol bs = Just <$> fromCol bs
 
 class FromRes a where
-  fromRes :: ResultOk -> ExceptT T.Text IO a
+  fromRes :: ResultOk -> ExceptT Text IO a
 
 instance FromRes ResultOk where
   fromRes = return
@@ -158,13 +161,13 @@ instance FromRes Discard where
 newtype Discard = Discard ()
   deriving stock (Eq, Show)
 
-parseWord64 :: B.ByteString -> Either T.Text Word64
+parseWord64 :: ByteString -> Either Text Word64
 parseWord64 b = either buildE return parsed
   where
     parsed = Atto.parseOnly (Atto.decimal <* Atto.endOfInput) b
     buildE e = Left $ "Couldn't parse Word64: " <> fromString e
 
-extractCount :: PQ.Result -> ExceptT T.Text IO Word64
+extractCount :: PQ.Result -> ExceptT Text IO Word64
 extractCount r = do
   cmd <- liftIO $ PQ.cmdTuples r
   case cmd of
@@ -190,7 +193,7 @@ instance FromRes a => FromRes (WithCount a) where
 
 type ResultMatrix = V.Vector ResultRow
 
-type ResultRow = V.Vector (Maybe B.ByteString)
+type ResultRow = V.Vector (Maybe ByteString)
 
 {-# INLINE colInt #-}
 colInt :: PQ.Column -> Int
@@ -207,9 +210,9 @@ buildMat r = do
   nr <- PQ.ntuples r
   nc <- PQ.nfields r
   mvx <- VM.unsafeNew (rowInt nr)
-  forM_ [0 .. pred nr] $ \ir -> do
+  for_ [0 .. pred nr] $ \ir -> do
     mvy <- VM.unsafeNew (colInt nc)
-    forM_ [0 .. pred nc] $ \ic ->
+    for_ [0 .. pred nc] $ \ic ->
       VM.unsafeWrite mvy (colInt ic) =<< PQ.getvalue r ir ic
     vy <- V.unsafeFreeze mvy
     VM.unsafeWrite mvx (rowInt ir) vy
@@ -248,7 +251,7 @@ instance FromRow a => FromRes (Maybe a) where
       1 -> ExceptT $ return $ Just <$> fromRow (rm V.! 0)
       _ -> throwError "Rows returned > 1"
 
-colMismatch :: Int -> Int -> T.Text
+colMismatch :: Int -> Int -> Text
 colMismatch expected actual =
   fromString $
     mconcat
@@ -427,7 +430,7 @@ instance
 class FromRow a where
   fromRow ::
     ResultRow ->
-    Either T.Text a
+    Either Text a
 
 class ToPrepArgs a where
   toPrepArgs :: a -> [PrepArg]
@@ -444,8 +447,8 @@ instance ToPrepArg PrepArg where
 toPrepValHelper :: PQ.Oid -> (a -> PE.Encoding) -> a -> PrepArg
 toPrepValHelper o e a = (o, Just (PE.encodingBytes $ e a, PQ.Binary))
 
-instance (J.ToJSON a) => ToPrepArg (AltJ a) where
-  toPrepVal (AltJ a) = toPrepValHelper PTI.json PE.bytea_lazy $ J.encode a
+instance (ToJSON a) => ToPrepArg (AltJ a) where
+  toPrepVal (AltJ a) = toPrepValHelper PTI.json PE.bytea_lazy $ encode a
 
 instance ToPrepArg Word64 where
   toPrepVal = toPrepValHelper PTI.int8 PE.int8_word64
@@ -471,16 +474,16 @@ instance ToPrepArg Scientific where
 instance ToPrepArg Char where
   toPrepVal = toPrepValHelper PTI.text PE.char_utf8
 
-instance ToPrepArg T.Text where
+instance ToPrepArg Text where
   toPrepVal = toPrepValHelper PTI.text PE.text_strict
 
-instance ToPrepArg TL.Text where
+instance ToPrepArg Lazy.Text where
   toPrepVal = toPrepValHelper PTI.text PE.text_lazy
 
-instance ToPrepArg B.ByteString where
+instance ToPrepArg ByteString where
   toPrepVal = toPrepValHelper PTI.bytea PE.bytea_strict
 
-instance ToPrepArg BL.ByteString where
+instance ToPrepArg Lazy.ByteString where
   toPrepVal = toPrepValHelper PTI.bytea PE.bytea_lazy
 
 instance ToPrepArg LocalTime where
@@ -495,14 +498,14 @@ instance ToPrepArg Bool where
 instance ToPrepArg Day where
   toPrepVal = toPrepValHelper PTI.date PE.date
 
-instance ToPrepArg UUID.UUID where
+instance ToPrepArg UUID where
   toPrepVal = toPrepValHelper PTI.uuid PE.uuid
 
-newtype JSON = JSON J.Value
+newtype JSON = JSON Value
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 
-newtype JSONB = JSONB J.Value
+newtype JSONB = JSONB Value
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 

@@ -37,23 +37,27 @@ where
 
 -------------------------------------------------------------------------------
 
-import Control.Exception
-import Control.Monad.Except
-import Control.Monad.Trans.Control
-import Data.Aeson
+import Control.Exception.Safe (Exception, Handler (..))
+import Control.Exception.Safe qualified as Exc
+import Control.Monad (when)
+import Control.Monad.Except (MonadError (catchError, throwError))
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Control (MonadBaseControl, control)
+import Control.Monad.Trans.Except (ExceptT, withExceptT)
+import Data.Aeson (ToJSON (toJSON))
 import Data.ByteString qualified as BS
-import Data.HashTable.IO qualified as HI
-import Data.IORef
+import Data.HashTable.IO qualified as HIO
+import Data.IORef (newIORef)
 import Data.Pool qualified as RP
-import Data.Text qualified as T
-import Data.Text.Encoding qualified as TE
-import Data.Time
+import Data.String (fromString)
+import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8')
+import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import Database.PG.Query.Connection
 import Database.PG.Query.Transaction
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Exts (fromString)
-import Language.Haskell.TH.Quote
-import Language.Haskell.TH.Syntax
+import Language.Haskell.TH.Quote (QuasiQuoter (..))
+import Language.Haskell.TH.Syntax (Exp, Q, qAddDependentFile, runIO)
 import System.Metrics.Distribution (Distribution)
 import System.Metrics.Distribution qualified as EKG.Distribution
 import Prelude
@@ -126,7 +130,7 @@ initPGPool ci cp logger = do
       let connAcquiredMicroseconds = realToFrac (1000000 * diffUTCTime connAcquiredAt createdAt)
       EKG.Distribution.add (_dbConnAcquireLatency stats) connAcquiredMicroseconds
       ctr <- newIORef 0
-      table <- HI.new
+      table <- HIO.new
       return $ PGConn pqConn (cpAllowPrepare cp) (cpCancel cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
     diffTime = fromIntegral $ cpIdleTime cp
@@ -160,7 +164,7 @@ beginTx (i, w) =
   where
     query =
       fromText $
-        T.pack
+        Text.pack
           ("BEGIN " <> show i <> " " <> maybe "" show w)
 
 commitTx :: (MonadIO m) => TxT m ()
@@ -219,9 +223,9 @@ catchConnErr ::
 catchConnErr action =
   control $ \runInIO ->
     runInIO action
-      `catches` [ Handler (runInIO . handler),
-                  Handler (runInIO . handleTimeout)
-                ]
+      `Exc.catches` [ Handler (runInIO . handler),
+                      Handler (runInIO . handleTimeout)
+                    ]
   where
     handler = mkConnExHandler action fromPGConnErr
 
@@ -276,13 +280,13 @@ sql = QuasiQuoter {quoteExp = \a -> [|fromString a|]}
 sqlFromFile :: FilePath -> Q Exp
 sqlFromFile fp = do
   bytes <- qAddDependentFile fp >> runIO (BS.readFile fp)
-  case TE.decodeUtf8' bytes of
-    Left err -> throw $! err
+  case decodeUtf8' bytes of
+    Left err -> Exc.impureThrow $! err
     Right txtContents ->
       -- NOTE: This is (effectively) the same implementation as the 'Lift'
       -- instance for 'Text' from 'th-lift-instances'.
-      let strContents = T.unpack txtContents
-       in [|fromText . T.pack $ strContents|]
+      let strContents = Text.unpack txtContents
+       in [|fromText . Text.pack $ strContents|]
 
 -- | 'RP.withResource' for PGPool but implementing a workaround for #5087,
 -- optionally expiring the connection after a configurable amount of time so
@@ -309,7 +313,7 @@ withExpiringPGconn pool f = do
       when connectionStale $ do
         -- Throwing is the only way to signal to resource pool to discard the
         -- connection at this time, so we need to use it for control flow:
-        throw PGConnectionStale
+        Exc.impureThrow PGConnectionStale
       -- else proceed with callback:
       f connRsrc
 
@@ -322,4 +326,7 @@ data PGConnectionStale = PGConnectionStale
 
 -- cribbed from lifted-base
 handleLifted :: (MonadBaseControl IO m, Exception e) => (e -> m a) -> m a -> m a
-handleLifted handler ma = control $ \runInIO -> handle (runInIO . handler) (runInIO ma)
+handleLifted handler ma = control $ \runInIO ->
+  Exc.handle
+    (runInIO . handler)
+    (runInIO ma)

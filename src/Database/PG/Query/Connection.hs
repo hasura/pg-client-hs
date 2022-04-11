@@ -43,27 +43,33 @@ where
 
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, catch, throwIO)
-import Control.Monad.Except
-import Control.Retry qualified as CR
-import Data.Aeson
-import Data.Aeson.Casing
-import Data.Aeson.TH
-import Data.Bool
-import Data.ByteString qualified as DB
-import Data.ByteString.Builder qualified as BB
-import Data.ByteString.Lazy qualified as BL
-import Data.HashTable.IO qualified as HI
-import Data.Hashable
-import Data.IORef
-import Data.Maybe
-import Data.Text qualified as DT
-import Data.Text.Encoding qualified as TE
-import Data.Text.Encoding.Error qualified as TE
-import Data.Time
-import Data.Word
+import Control.Monad.Except (MonadError (throwError))
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Class (lift)
+import Control.Monad.Trans.Except (ExceptT, runExceptT, withExceptT)
+import Control.Retry (RetryPolicyM)
+import Control.Retry qualified as Retry
+import Data.Aeson (ToJSON (toJSON), genericToJSON)
+import Data.Aeson.Casing (aesonDrop, snakeCase)
+import Data.Aeson.TH (mkToJSON)
+import Data.Bool (bool)
+import Data.ByteString (ByteString)
+import Data.ByteString.Builder qualified as BSB
+import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (for_)
+import Data.HashTable.IO qualified as HIO
+import Data.Hashable (Hashable (hashWithSalt))
+import Data.IORef (IORef, readIORef, writeIORef)
+import Data.Maybe (fromMaybe)
+import Data.String (IsString (fromString))
+import Data.Text (Text)
+import Data.Text qualified as Text
+import Data.Text.Encoding (decodeUtf8With, encodeUtf8)
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Time (NominalDiffTime, UTCTime)
+import Data.Word (Word16, Word32)
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Exts
-import GHC.Generics
+import GHC.Generics (Generic)
 import Prelude
 
 -------------------------------------------------------------------------------
@@ -79,7 +85,7 @@ data ConnOptions = ConnOptions
   deriving stock (Eq, Read, Show)
 
 data ConnDetails
-  = CDDatabaseURI !DB.ByteString
+  = CDDatabaseURI !ByteString
   | CDOptions !ConnOptions
   deriving stock (Eq, Read, Show)
 
@@ -89,7 +95,7 @@ data ConnInfo = ConnInfo
   }
   deriving stock (Eq, Read, Show)
 
-newtype PGConnErr = PGConnErr {getConnErr :: DT.Text}
+newtype PGConnErr = PGConnErr {getConnErr :: Text}
   deriving stock (Eq, Show)
   deriving newtype (ToJSON)
   deriving anyclass (Exception)
@@ -101,12 +107,12 @@ instance ToJSON PGExecStatus where
   toJSON (PGExecStatus pqStatus) =
     $(mkToJSON (aesonDrop 0 snakeCase) ''PQ.ExecStatus) pqStatus
 
-type PGRetryPolicyM m = CR.RetryPolicyM m
+type PGRetryPolicyM m = RetryPolicyM m
 
 type PGRetryPolicy = PGRetryPolicyM (ExceptT PGErrInternal IO)
 
 newtype PGLogEvent
-  = PLERetryMsg DT.Text
+  = PLERetryMsg Text
   deriving stock (Eq, Show)
 
 type PGLogger = PGLogEvent -> IO ()
@@ -123,7 +129,7 @@ throwPGConnErr ::
   MonadError PGError m => PGConnErr -> m a
 throwPGConnErr = throwError . Right
 
-readConnErr :: PQ.Connection -> IO DT.Text
+readConnErr :: PQ.Connection -> IO Text
 readConnErr conn = do
   m <- PQ.errorMessage conn
   return $ maybe "(empty connection error message)" lenientDecodeUtf8 m
@@ -136,19 +142,19 @@ pgRetrying ::
   m (Either PGConnErr a) ->
   m a
 pgRetrying resetFn retryP logger action = do
-  eRes <- CR.retrying retryP shouldRetry $ const action
+  eRes <- Retry.retrying retryP shouldRetry $ const action
   either (liftIO . throwIO) return eRes
   where
     shouldRetry rs =
       either (const $ onError rs) (const $ return False)
 
     onError rs = do
-      let retryIterNo = CR.rsIterNumber rs
+      let retryIterNo = Retry.rsIterNumber rs
       liftIO $ do
         logger $
           PLERetryMsg $
             "postgres connection failed, retrying("
-              <> DT.pack (show retryIterNo)
+              <> Text.pack (show retryIterNo)
               <> ")."
         resetFn
       return True
@@ -189,9 +195,9 @@ initPQConn ci logger =
       -- Set some parameters and check the response
       mRes <-
         PQ.exec conn $
-          BL.toStrict . BB.toLazyByteString . mconcat $
-            [ BB.string7 "SET client_encoding = 'UTF8';",
-              BB.string7 "SET client_min_messages TO WARNING;"
+          LBS.toStrict . BSB.toLazyByteString . mconcat $
+            [ BSB.string7 "SET client_encoding = 'UTF8';",
+              BSB.string7 "SET client_min_messages TO WARNING;"
             ]
       case mRes of
         Just res -> do
@@ -217,7 +223,7 @@ defaultConnInfo = ConnInfo 0 details
             connOptions = Nothing
           }
 
-pgConnString :: ConnDetails -> DB.ByteString
+pgConnString :: ConnDetails -> ByteString
 pgConnString (CDDatabaseURI uri) = uri
 pgConnString (CDOptions opts) = fromString connstr
   where
@@ -259,10 +265,10 @@ pgConnString (CDOptions opts) = fromString connstr
 
 data PGStmtErrDetail = PGStmtErrDetail
   { edExecStatus :: !PGExecStatus,
-    edStatusCode :: !(Maybe DT.Text),
-    edMessage :: !(Maybe DT.Text),
-    edDescription :: !(Maybe DT.Text),
-    edHint :: !(Maybe DT.Text)
+    edStatusCode :: !(Maybe Text),
+    edMessage :: !(Maybe Text),
+    edDescription :: !(Maybe Text),
+    edHint :: !(Maybe Text)
   }
   deriving stock (Eq, Generic, Show)
 
@@ -280,8 +286,8 @@ getPQRes (ResultOkEmpty res) = res
 getPQRes (ResultOkData res) = res
 
 {-# INLINE lenientDecodeUtf8 #-}
-lenientDecodeUtf8 :: DB.ByteString -> DT.Text
-lenientDecodeUtf8 = TE.decodeUtf8With TE.lenientDecode
+lenientDecodeUtf8 :: ByteString -> Text
+lenientDecodeUtf8 = decodeUtf8With lenientDecode
 
 retryOnConnErr ::
   PGConn ->
@@ -326,7 +332,7 @@ checkResult conn mRes =
         _ ->
           throwPGIntErr $
             PGIUnexpected $
-              "Unexpected execStatus : " <> DT.pack (show st)
+              "Unexpected execStatus : " <> Text.pack (show st)
   where
     isConnOk = do
       connSt <- lift $ PQ.status conn
@@ -362,7 +368,7 @@ assertResCmd conn mRes = do
       throwPGIntErr $
         PGIUnexpected "cmd expected; tuples found"
 
-data PGCancelErr = PGCancelErr DT.Text
+data PGCancelErr = PGCancelErr Text
   deriving stock (Eq, Show)
   deriving anyclass (Exception)
 
@@ -397,8 +403,8 @@ mkPGRetryPolicy ::
   Int ->
   PGRetryPolicyM m
 mkPGRetryPolicy numRetries =
-  CR.limitRetriesByDelay limitDelay $
-    CR.exponentialBackoff baseDelay <> CR.limitRetries numRetries
+  Retry.limitRetriesByDelay limitDelay $
+    Retry.exponentialBackoff baseDelay <> Retry.limitRetries numRetries
   where
     -- limitDelay effectively clamps numRetries to <= 6
     limitDelay = 6 * 1000 * 1000 -- 6 seconds
@@ -428,10 +434,10 @@ resetPGConn (PGConn conn _ _ _ _ ctr ht _ _) = do
   -- Set counter to 0
   writeIORef ctr 0
   -- Flush all items in hash table
-  keys <- map fst <$> HI.toList ht
-  forM_ keys $ HI.delete ht
+  keys <- map fst <$> HIO.toList ht
+  for_ keys $ HIO.delete ht
 
-type RKLookupTable = HI.BasicHashTable LocalKey RemoteKey
+type RKLookupTable = HIO.BasicHashTable LocalKey RemoteKey
 
 -- |
 -- Local statement key.
@@ -447,13 +453,13 @@ localKey t ol =
     oidMapper (PQ.Oid x) = fromIntegral x
 
 newtype Template
-  = Template DB.ByteString
+  = Template ByteString
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 
 {-# INLINE mkTemplate #-}
-mkTemplate :: DT.Text -> Template
-mkTemplate = Template . TE.encodeUtf8
+mkTemplate :: Text -> Template
+mkTemplate = Template . encodeUtf8
 
 instance Hashable LocalKey where
   hashWithSalt salt (LocalKey template _) =
@@ -461,7 +467,7 @@ instance Hashable LocalKey where
 
 -- |
 -- Remote statement key.
-type RemoteKey = DB.ByteString
+type RemoteKey = ByteString
 
 prepare ::
   PGConn ->
@@ -470,7 +476,7 @@ prepare ::
   PGExec RemoteKey
 prepare (PGConn conn _ _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
   let lk = localKey tpl tl
-  rkm <- lift $ HI.lookup table lk
+  rkm <- lift $ HIO.lookup table lk
   case rkm of
     -- Already prepared
     (Just rk) -> return rk
@@ -484,22 +490,22 @@ prepare (PGConn conn _ _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
       assertResCmd conn mRes
       lift $ do
         -- Insert into table
-        HI.insert table lk rk
+        HIO.insert table lk rk
         -- Increment the counter
         writeIORef counter (succ w)
       return rk
 
-type PrepArg = (PQ.Oid, Maybe (DB.ByteString, PQ.Format))
+type PrepArg = (PQ.Oid, Maybe (ByteString, PQ.Format))
 
 data PGQuery a = PGQuery
   { pgqTemplate :: !Template,
     pgqArgs :: [PrepArg],
     pgqPreparable :: Bool,
-    pgqConv :: ResultOk -> ExceptT DT.Text IO a
+    pgqConv :: ResultOk -> ExceptT Text IO a
   }
 
 data PGErrInternal
-  = PGIUnexpected !DT.Text
+  = PGIUnexpected !Text
   | PGIStatement !PGStmtErrDetail
   deriving stock (Eq)
 
@@ -536,7 +542,7 @@ execQuery pgConn pgQuery = do
 execMulti ::
   PGConn ->
   Template ->
-  (ResultOk -> ExceptT DT.Text IO a) ->
+  (ResultOk -> ExceptT Text IO a) ->
   ExceptT PGErrInternal IO a
 execMulti pgConn (Template t) convF = do
   resOk <- retryOnConnErr pgConn $ do
