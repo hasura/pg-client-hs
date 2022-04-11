@@ -43,27 +43,31 @@ where
 
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, catch, throwIO)
-import Control.Monad.Except
+import Control.Monad.Except (ExceptT, MonadError (throwError), runExceptT, withExceptT)
+import Control.Monad.IO.Class (MonadIO (liftIO))
+import Control.Monad.Trans.Class (lift)
 import Control.Retry qualified as CR
-import Data.Aeson
-import Data.Aeson.Casing
-import Data.Aeson.TH
-import Data.Bool
-import Data.ByteString qualified as DB
-import Data.ByteString.Builder qualified as BB
-import Data.ByteString.Lazy qualified as BL
-import Data.HashTable.IO qualified as HI
-import Data.Hashable
-import Data.IORef
-import Data.Maybe
+import Data.Aeson (ToJSON (..), genericToJSON)
+import Data.Aeson.Casing (aesonDrop, snakeCase)
+import Data.Aeson.TH (mkToJSON)
+import Data.Bool (bool)
+import Data.ByteString (ByteString)
+import Data.ByteString.Builder qualified as BSB
+import Data.ByteString.Lazy qualified as LBS
+import Data.Foldable (for_)
+import Data.HashTable.IO qualified as HIO
+import Data.Hashable (Hashable (hashWithSalt))
+import Data.IORef (IORef, readIORef, writeIORef)
+import Data.Kind (Type)
+import Data.Maybe (fromMaybe)
+import Data.String (IsString (fromString))
 import Data.Text qualified as DT
-import Data.Text.Encoding qualified as TE
-import Data.Text.Encoding.Error qualified as TE
-import Data.Time
-import Data.Word
+import Data.Text.Encoding (decodeUtf8With, encodeUtf8)
+import Data.Text.Encoding.Error (lenientDecode)
+import Data.Time (NominalDiffTime, UTCTime)
+import Data.Word (Word16, Word32)
 import Database.PostgreSQL.LibPQ qualified as PQ
-import GHC.Exts
-import GHC.Generics
+import GHC.Generics (Generic)
 import Prelude
 
 -------------------------------------------------------------------------------
@@ -79,7 +83,7 @@ data ConnOptions = ConnOptions
   deriving stock (Eq, Read, Show)
 
 data ConnDetails
-  = CDDatabaseURI !DB.ByteString
+  = CDDatabaseURI !ByteString
   | CDOptions !ConnOptions
   deriving stock (Eq, Read, Show)
 
@@ -189,9 +193,9 @@ initPQConn ci logger =
       -- Set some parameters and check the response
       mRes <-
         PQ.exec conn $
-          BL.toStrict . BB.toLazyByteString . mconcat $
-            [ BB.string7 "SET client_encoding = 'UTF8';",
-              BB.string7 "SET client_min_messages TO WARNING;"
+          LBS.toStrict . BSB.toLazyByteString . mconcat $
+            [ BSB.string7 "SET client_encoding = 'UTF8';",
+              BSB.string7 "SET client_min_messages TO WARNING;"
             ]
       case mRes of
         Just res -> do
@@ -217,7 +221,7 @@ defaultConnInfo = ConnInfo 0 details
             connOptions = Nothing
           }
 
-pgConnString :: ConnDetails -> DB.ByteString
+pgConnString :: ConnDetails -> ByteString
 pgConnString (CDDatabaseURI uri) = uri
 pgConnString (CDOptions opts) = fromString connstr
   where
@@ -280,8 +284,8 @@ getPQRes (ResultOkEmpty res) = res
 getPQRes (ResultOkData res) = res
 
 {-# INLINE lenientDecodeUtf8 #-}
-lenientDecodeUtf8 :: DB.ByteString -> DT.Text
-lenientDecodeUtf8 = TE.decodeUtf8With TE.lenientDecode
+lenientDecodeUtf8 :: ByteString -> DT.Text
+lenientDecodeUtf8 = decodeUtf8With lenientDecode
 
 retryOnConnErr ::
   PGConn ->
@@ -428,10 +432,10 @@ resetPGConn (PGConn conn _ _ _ _ ctr ht _ _) = do
   -- Set counter to 0
   writeIORef ctr 0
   -- Flush all items in hash table
-  keys <- map fst <$> HI.toList ht
-  forM_ keys $ HI.delete ht
+  keys <- map fst <$> HIO.toList ht
+  for_ keys $ HIO.delete ht
 
-type RKLookupTable = HI.BasicHashTable LocalKey RemoteKey
+type RKLookupTable = HIO.BasicHashTable LocalKey RemoteKey
 
 -- |
 -- Local statement key.
@@ -447,13 +451,13 @@ localKey t ol =
     oidMapper (PQ.Oid x) = fromIntegral x
 
 newtype Template
-  = Template DB.ByteString
+  = Template ByteString
   deriving stock (Eq, Show)
   deriving newtype (Hashable)
 
 {-# INLINE mkTemplate #-}
 mkTemplate :: DT.Text -> Template
-mkTemplate = Template . TE.encodeUtf8
+mkTemplate = Template . encodeUtf8
 
 instance Hashable LocalKey where
   hashWithSalt salt (LocalKey template _) =
@@ -461,7 +465,7 @@ instance Hashable LocalKey where
 
 -- |
 -- Remote statement key.
-type RemoteKey = DB.ByteString
+type RemoteKey = ByteString
 
 prepare ::
   PGConn ->
@@ -470,7 +474,7 @@ prepare ::
   PGExec RemoteKey
 prepare (PGConn conn _ _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
   let lk = localKey tpl tl
-  rkm <- lift $ HI.lookup table lk
+  rkm <- lift $ HIO.lookup table lk
   case rkm of
     -- Already prepared
     (Just rk) -> return rk
@@ -484,12 +488,12 @@ prepare (PGConn conn _ _ _ _ counter table _ _) tpl@(Template tplBytes) tl = do
       assertResCmd conn mRes
       lift $ do
         -- Insert into table
-        HI.insert table lk rk
+        HIO.insert table lk rk
         -- Increment the counter
         writeIORef counter (succ w)
       return rk
 
-type PrepArg = (PQ.Oid, Maybe (DB.ByteString, PQ.Format))
+type PrepArg = (PQ.Oid, Maybe (ByteString, PQ.Format))
 
 data PGQuery a = PGQuery
   { pgqTemplate :: !Template,
