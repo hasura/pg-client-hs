@@ -1,18 +1,17 @@
 cabal-version:      3.0
 name:               pg-client
 version:            0.1.0
-
--- synopsis:
--- description:
-homepage:           https://github.com/hasura/platform
-license:            Apache-2.0
-license-file:       LICENSE
+homepage:           https://github.com/hasura/pg-client-hs
+bug-reports:        https://github.com/hasura/pg-client-hs/issues
 author:             Vamshi Surabhi
 maintainer:         vamshi@hasura.io
 copyright:          2017 Hasura Systems Private Limited
+license:            Apache-2.0
+license-file:       LICENSE
 category:           Database
 build-type:         Simple
 extra-source-files: README.md
+tested-with:        GHC ==8.10.7 || ==9.2.2
 
 source-repository head
   type:     git
