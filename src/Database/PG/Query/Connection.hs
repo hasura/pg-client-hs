@@ -404,12 +404,21 @@ cancelPG c = do
 -- The caller can't tell whether a transaction was committed.
 cancelOnAsync :: PQ.Connection -> IO a -> PGExec a
 cancelOnAsync conn action = do
-  c <-
-    lift (PQ.getCancel conn) >>= \case
-      Nothing -> throwPGIntErr $ PGIUnexpected $ "failed to allocate cancel handle"
-      Just c -> pure c
-  lift (interruptOnAsyncException (cancelPG c) action)
-    `catch` (\(PGCancelErr msg) -> throwPGIntErr $ PGIUnexpected $ "error cancelling query: " <> msg)
+  lift (PQ.getCancel conn) >>= \case
+    -- We can't get a cancel handle when the connection is invalid [1]. So we
+    -- don't setup the cancellation, because the query is going to fail anyway
+    -- on this invalid connection. If we throw an error here, it becomes
+    -- confusing for the user. An appropriate way to handle it would be to throw
+    -- an invalid connection error here. But we don't have any details on why
+    -- the connection is invalid. If we let postgres throw the error, it will
+    -- have the actual error message/reason for the invalid connection. Hence,
+    -- it makes sense to not setup the cancellation here and try to run the
+    -- query, which will fail with proper error message from Postgres.
+    -- [1]: https://hackage.haskell.org/package/postgresql-libpq-0.9.4.3/docs/Database-PostgreSQL-LibPQ.html#v:getCancel
+    Nothing -> lift action
+    Just c -> do
+      lift (interruptOnAsyncException (cancelPG c) action)
+        `catch` (\(PGCancelErr msg) -> throwPGIntErr $ PGIUnexpected $ "error cancelling query: " <> msg)
 
 mkPGRetryPolicy ::
   MonadIO m =>
