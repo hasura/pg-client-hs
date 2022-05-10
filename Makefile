@@ -32,6 +32,13 @@ build-deps:
 	  --enable-tests \
 	  --enable-benchmarks
 
+.PHONY: build
+build:
+	$(CABAL) build \
+	  --enable-tests \
+	  --enable-benchmarks \
+	  pg-client
+
 .PHONY: build-all
 build-all:
 	$(CABAL) build \

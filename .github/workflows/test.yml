@@ -46,20 +46,20 @@ jobs:
           path: |
             ${{ steps.setup-haskell-cabal.outputs.cabal-store }}
             dist-newstyle
-          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('ci/${{ matrix.ghc }}.project.freeze') }}
-          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('ci/${{ matrix.ghc }}/ci.project.freeze') }}-1
+          restore-keys: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('ci/${{ matrix.ghc }}/ci.project.freeze') }}-1
 
       - name: Install dependencies
         run: |
-          make update PROJECT='ci/${{ matrix.ghc }}.project'
-          make build-deps PROJECT='ci/${{ matrix.ghc }}.project'
+          make update PROJECT='ci/${{ matrix.ghc }}/ci.project'
+          make build-deps PROJECT='ci/${{ matrix.ghc }}/ci.project'
 
       - name: Build
         run: |
-          make build-all PROJECT='ci/${{ matrix.ghc }}.project'
+          make build-all PROJECT='ci/${{ matrix.ghc }}/ci.project'
 
       - name: Run tests
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
-          make test-all PROJECT='ci/${{ matrix.ghc }}.project'
+          make test-all PROJECT='ci/${{ matrix.ghc }}/ci.project'
