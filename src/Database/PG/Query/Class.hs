@@ -30,7 +30,8 @@ import Control.Monad.Trans.Except (ExceptT (..))
 import Data.Aeson (FromJSON, ToJSON, Value, eitherDecodeStrict, encode)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.ByteString (ByteString)
-import Data.ByteString.Lazy qualified as Lazy (ByteString)
+import Data.ByteString qualified as BS
+import Data.ByteString.Lazy qualified as Lazy -- (ByteString)
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
 import Data.Int (Int16, Int32, Int64)
@@ -80,7 +81,7 @@ mapEither f _ (Left a) = Left $ f a
 mapEither _ f (Right b) = Right $ f b
 
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict)
+  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict . bswtf)
 
 type FromCol :: Type -> Constraint
 class FromCol a where
@@ -122,10 +123,10 @@ instance FromCol Lazy.Text where
   fromCol = fromColHelper PD.text_lazy
 
 instance FromCol ByteString where
-  fromCol = fromColHelper PD.bytea_strict
+  fromCol = fromColHelper (fmap bswtf PD.bytea_strict)
 
 instance FromCol Lazy.ByteString where
-  fromCol = fromColHelper PD.bytea_lazy
+  fromCol = fromColHelper (fmap lbswtf PD.bytea_lazy)
 
 instance FromCol Day where
   fromCol = fromColHelper PD.date
@@ -227,6 +228,12 @@ buildMat r = do
     vy <- V.unsafeFreeze mvy
     VM.unsafeWrite mvx (rowInt ir) vy
   V.unsafeFreeze mvx
+
+lbswtf :: Lazy.ByteString -> Lazy.ByteString
+lbswtf bs = if Lazy.take 1 bs == "\x1" then Lazy.drop 1 bs else bs
+
+bswtf :: ByteString -> ByteString
+bswtf bs = if BS.take 1 bs == "\x1" then BS.drop 1 bs else bs
 
 instance FromRow a => FromRes [a] where
   fromRes (ResultOkEmpty _) =
