@@ -459,7 +459,7 @@ toPrepValHelper :: PQ.Oid -> (a -> PE.Encoding) -> a -> PrepArg
 toPrepValHelper o e a = (o, Just (PE.encodingBytes $ e a, PQ.Binary))
 
 instance (ToJSON a) => ToPrepArg (AltJ a) where
-  toPrepVal (AltJ a) = toPrepValHelper PTI.Json PE.bytea_lazy $ encode a
+  toPrepVal (AltJ a) = toPrepValHelper PTI.JSON PE.bytea_lazy $ encode a
 
 instance ToPrepArg Word64 where
   toPrepVal = toPrepValHelper PTI.Int8 PE.int8_word64
@@ -501,7 +501,7 @@ instance ToPrepArg LocalTime where
   toPrepVal = toPrepValHelper PTI.Timestamp PE.timestamp_int
 
 instance ToPrepArg UTCTime where
-  toPrepVal = toPrepValHelper PTI.Timestamptz PE.timestamptz_int
+  toPrepVal = toPrepValHelper PTI.TimestampTZ PE.timestamptz_int
 
 instance ToPrepArg Bool where
   toPrepVal = toPrepValHelper PTI.Bool PE.bool
@@ -510,7 +510,7 @@ instance ToPrepArg Day where
   toPrepVal = toPrepValHelper PTI.Date PE.date
 
 instance ToPrepArg UUID where
-  toPrepVal = toPrepValHelper PTI.Uuid PE.uuid
+  toPrepVal = toPrepValHelper PTI.UUID PE.uuid
 
 type JSON :: Type
 newtype JSON = JSON Value
@@ -523,10 +523,10 @@ newtype JSONB = JSONB Value
   deriving newtype (Hashable)
 
 instance ToPrepArg JSON where
-  toPrepVal (JSON j) = toPrepValHelper PTI.Json PE.json_ast j
+  toPrepVal (JSON j) = toPrepValHelper PTI.JSON PE.json_ast j
 
 instance ToPrepArg JSONB where
-  toPrepVal (JSONB j) = toPrepValHelper PTI.Jsonb PE.jsonb_ast j
+  toPrepVal (JSONB j) = toPrepValHelper PTI.JSONB PE.jsonb_ast j
 
 instance (ToPrepArg a) => ToPrepArg (Maybe a) where
   toPrepVal (Just a) = toPrepVal a
