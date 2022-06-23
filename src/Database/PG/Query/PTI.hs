@@ -82,7 +82,6 @@ arrayOf = \case
 
 -- * Constants
 
-<<<<<<< HEAD
 --
 -- We use pattern synonyms for the Oids so that we can pattern-match on them.
 
