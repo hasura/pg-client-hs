@@ -13,7 +13,7 @@ import Database.PostgreSQL.LibPQ (Oid (..))
 -- | Convert an 'Oid' for a single type into the corresponding array 'Oid'. If
 -- the original Oid is 'Auto', then the result will also be 'Auto'. For types
 -- without a defined array parallel, the result will be 'Unknown'.
-arrayOf :: PQ.Oid -> PQ.Oid
+arrayOf :: Oid -> Oid
 arrayOf = \case
   Auto -> Auto
   ACLItem -> ACLItemArray
@@ -85,400 +85,400 @@ arrayOf = \case
 --
 -- We use pattern synonyms for the Oids so that we can pattern-match on them.
 
-pattern Auto :: PQ.Oid
-pattern Auto = PQ.Oid 0
+pattern Auto :: Oid
+pattern Auto = Oid 0
 
-pattern AbsTime :: PQ.Oid
-pattern AbsTime = PQ.Oid 702
+pattern AbsTime :: Oid
+pattern AbsTime = Oid 702
 
-pattern ACLItem :: PQ.Oid
-pattern ACLItem = PQ.Oid 1033
+pattern ACLItem :: Oid
+pattern ACLItem = Oid 1033
 
-pattern Bit :: PQ.Oid
-pattern Bit = PQ.Oid 1560
+pattern Bit :: Oid
+pattern Bit = Oid 1560
 
-pattern Bool :: PQ.Oid
-pattern Bool = PQ.Oid 16
+pattern Bool :: Oid
+pattern Bool = Oid 16
 
-pattern Box :: PQ.Oid
-pattern Box = PQ.Oid 603
+pattern Box :: Oid
+pattern Box = Oid 603
 
-pattern BPChar :: PQ.Oid
-pattern BPChar = PQ.Oid 1042
+pattern BPChar :: Oid
+pattern BPChar = Oid 1042
 
-pattern Bytea :: PQ.Oid
-pattern Bytea = PQ.Oid 17
+pattern Bytea :: Oid
+pattern Bytea = Oid 17
 
-pattern Char :: PQ.Oid
-pattern Char = PQ.Oid 18
+pattern Char :: Oid
+pattern Char = Oid 18
 
-pattern CID :: PQ.Oid
-pattern CID = PQ.Oid 29
+pattern CID :: Oid
+pattern CID = Oid 29
 
-pattern CIDR :: PQ.Oid
-pattern CIDR = PQ.Oid 650
+pattern CIDR :: Oid
+pattern CIDR = Oid 650
 
-pattern Circle :: PQ.Oid
-pattern Circle = PQ.Oid 718
+pattern Circle :: Oid
+pattern Circle = Oid 718
 
-pattern CString :: PQ.Oid
-pattern CString = PQ.Oid 2275
+pattern CString :: Oid
+pattern CString = Oid 2275
 
-pattern Date :: PQ.Oid
-pattern Date = PQ.Oid 1082
+pattern Date :: Oid
+pattern Date = Oid 1082
 
-pattern DateRange :: PQ.Oid
-pattern DateRange = PQ.Oid 3912
+pattern DateRange :: Oid
+pattern DateRange = Oid 3912
 
-pattern Float4 :: PQ.Oid
-pattern Float4 = PQ.Oid 700
+pattern Float4 :: Oid
+pattern Float4 = Oid 700
 
-pattern Float8 :: PQ.Oid
-pattern Float8 = PQ.Oid 701
+pattern Float8 :: Oid
+pattern Float8 = Oid 701
 
-pattern GTSVector :: PQ.Oid
-pattern GTSVector = PQ.Oid 3642
+pattern GTSVector :: Oid
+pattern GTSVector = Oid 3642
 
-pattern INet :: PQ.Oid
-pattern INet = PQ.Oid 869
+pattern INet :: Oid
+pattern INet = Oid 869
 
-pattern Int2 :: PQ.Oid
-pattern Int2 = PQ.Oid 21
+pattern Int2 :: Oid
+pattern Int2 = Oid 21
 
-pattern Int2Vector :: PQ.Oid
-pattern Int2Vector = PQ.Oid 22
+pattern Int2Vector :: Oid
+pattern Int2Vector = Oid 22
 
-pattern Int4 :: PQ.Oid
-pattern Int4 = PQ.Oid 23
+pattern Int4 :: Oid
+pattern Int4 = Oid 23
 
-pattern Int4Range :: PQ.Oid
-pattern Int4Range = PQ.Oid 3904
+pattern Int4Range :: Oid
+pattern Int4Range = Oid 3904
 
-pattern Int8 :: PQ.Oid
-pattern Int8 = PQ.Oid 20
+pattern Int8 :: Oid
+pattern Int8 = Oid 20
 
-pattern Int8Range :: PQ.Oid
-pattern Int8Range = PQ.Oid 3926
+pattern Int8Range :: Oid
+pattern Int8Range = Oid 3926
 
-pattern Interval :: PQ.Oid
-pattern Interval = PQ.Oid 1186
+pattern Interval :: Oid
+pattern Interval = Oid 1186
 
-pattern JSON :: PQ.Oid
-pattern JSON = PQ.Oid 114
+pattern JSON :: Oid
+pattern JSON = Oid 114
 
-pattern JSONB :: PQ.Oid
-pattern JSONB = PQ.Oid 3802
+pattern JSONB :: Oid
+pattern JSONB = Oid 3802
 
-pattern Line :: PQ.Oid
-pattern Line = PQ.Oid 628
+pattern Line :: Oid
+pattern Line = Oid 628
 
-pattern LSeg :: PQ.Oid
-pattern LSeg = PQ.Oid 601
+pattern LSeg :: Oid
+pattern LSeg = Oid 601
 
-pattern MacAddr :: PQ.Oid
-pattern MacAddr = PQ.Oid 829
+pattern MacAddr :: Oid
+pattern MacAddr = Oid 829
 
-pattern Money :: PQ.Oid
-pattern Money = PQ.Oid 790
+pattern Money :: Oid
+pattern Money = Oid 790
 
-pattern Name :: PQ.Oid
-pattern Name = PQ.Oid 19
+pattern Name :: Oid
+pattern Name = Oid 19
 
-pattern Numeric :: PQ.Oid
-pattern Numeric = PQ.Oid 1700
+pattern Numeric :: Oid
+pattern Numeric = Oid 1700
 
-pattern NumRange :: PQ.Oid
-pattern NumRange = PQ.Oid 3906
+pattern NumRange :: Oid
+pattern NumRange = Oid 3906
 
-pattern OID :: PQ.Oid
-pattern OID = PQ.Oid 26
+pattern OID :: Oid
+pattern OID = Oid 26
 
-pattern OIDVector :: PQ.Oid
-pattern OIDVector = PQ.Oid 30
+pattern OIDVector :: Oid
+pattern OIDVector = Oid 30
 
-pattern Path :: PQ.Oid
-pattern Path = PQ.Oid 602
+pattern Path :: Oid
+pattern Path = Oid 602
 
-pattern Point :: PQ.Oid
-pattern Point = PQ.Oid 600
+pattern Point :: Oid
+pattern Point = Oid 600
 
-pattern Polygon :: PQ.Oid
-pattern Polygon = PQ.Oid 604
+pattern Polygon :: Oid
+pattern Polygon = Oid 604
 
-pattern Record :: PQ.Oid
-pattern Record = PQ.Oid 2249
+pattern Record :: Oid
+pattern Record = Oid 2249
 
-pattern RefCursor :: PQ.Oid
-pattern RefCursor = PQ.Oid 1790
+pattern RefCursor :: Oid
+pattern RefCursor = Oid 1790
 
-pattern RegClass :: PQ.Oid
-pattern RegClass = PQ.Oid 2205
+pattern RegClass :: Oid
+pattern RegClass = Oid 2205
 
-pattern RegConfig :: PQ.Oid
-pattern RegConfig = PQ.Oid 3734
+pattern RegConfig :: Oid
+pattern RegConfig = Oid 3734
 
-pattern RegDictionary :: PQ.Oid
-pattern RegDictionary = PQ.Oid 3769
+pattern RegDictionary :: Oid
+pattern RegDictionary = Oid 3769
 
-pattern RegOper :: PQ.Oid
-pattern RegOper = PQ.Oid 2203
+pattern RegOper :: Oid
+pattern RegOper = Oid 2203
 
-pattern RegOperator :: PQ.Oid
-pattern RegOperator = PQ.Oid 2204
+pattern RegOperator :: Oid
+pattern RegOperator = Oid 2204
 
-pattern RegProc :: PQ.Oid
-pattern RegProc = PQ.Oid 24
+pattern RegProc :: Oid
+pattern RegProc = Oid 24
 
-pattern RegProcedure :: PQ.Oid
-pattern RegProcedure = PQ.Oid 2202
+pattern RegProcedure :: Oid
+pattern RegProcedure = Oid 2202
 
-pattern RegType :: PQ.Oid
-pattern RegType = PQ.Oid 2206
+pattern RegType :: Oid
+pattern RegType = Oid 2206
 
-pattern RelTime :: PQ.Oid
-pattern RelTime = PQ.Oid 703
+pattern RelTime :: Oid
+pattern RelTime = Oid 703
 
-pattern Text :: PQ.Oid
-pattern Text = PQ.Oid 25
+pattern Text :: Oid
+pattern Text = Oid 25
 
-pattern TID :: PQ.Oid
-pattern TID = PQ.Oid 27
+pattern TID :: Oid
+pattern TID = Oid 27
 
-pattern Time :: PQ.Oid
-pattern Time = PQ.Oid 1083
+pattern Time :: Oid
+pattern Time = Oid 1083
 
-pattern Timestamp :: PQ.Oid
-pattern Timestamp = PQ.Oid 1114
+pattern Timestamp :: Oid
+pattern Timestamp = Oid 1114
 
-pattern TimestampTZ :: PQ.Oid
-pattern TimestampTZ = PQ.Oid 1184
+pattern TimestampTZ :: Oid
+pattern TimestampTZ = Oid 1184
 
-pattern TimeTZ :: PQ.Oid
-pattern TimeTZ = PQ.Oid 1266
+pattern TimeTZ :: Oid
+pattern TimeTZ = Oid 1266
 
-pattern TInterval :: PQ.Oid
-pattern TInterval = PQ.Oid 704
+pattern TInterval :: Oid
+pattern TInterval = Oid 704
 
-pattern TSQuery :: PQ.Oid
-pattern TSQuery = PQ.Oid 3615
+pattern TSQuery :: Oid
+pattern TSQuery = Oid 3615
 
-pattern TSRange :: PQ.Oid
-pattern TSRange = PQ.Oid 3908
+pattern TSRange :: Oid
+pattern TSRange = Oid 3908
 
-pattern TSTZRange :: PQ.Oid
-pattern TSTZRange = PQ.Oid 3910
+pattern TSTZRange :: Oid
+pattern TSTZRange = Oid 3910
 
-pattern TSVector :: PQ.Oid
-pattern TSVector = PQ.Oid 3614
+pattern TSVector :: Oid
+pattern TSVector = Oid 3614
 
-pattern TXIDSnapshot :: PQ.Oid
-pattern TXIDSnapshot = PQ.Oid 2970
+pattern TXIDSnapshot :: Oid
+pattern TXIDSnapshot = Oid 2970
 
-pattern Unknown :: PQ.Oid
-pattern Unknown = PQ.Oid 705
+pattern Unknown :: Oid
+pattern Unknown = Oid 705
 
-pattern UUID :: PQ.Oid
-pattern UUID = PQ.Oid 2950
+pattern UUID :: Oid
+pattern UUID = Oid 2950
 
-pattern Varbit :: PQ.Oid
-pattern Varbit = PQ.Oid 1562
+pattern Varbit :: Oid
+pattern Varbit = Oid 1562
 
-pattern Varchar :: PQ.Oid
-pattern Varchar = PQ.Oid 1043
+pattern Varchar :: Oid
+pattern Varchar = Oid 1043
 
-pattern Void :: PQ.Oid
-pattern Void = PQ.Oid 2278
+pattern Void :: Oid
+pattern Void = Oid 2278
 
-pattern XID :: PQ.Oid
-pattern XID = PQ.Oid 28
+pattern XID :: Oid
+pattern XID = Oid 28
 
-pattern XML :: PQ.Oid
-pattern XML = PQ.Oid 142
+pattern XML :: Oid
+pattern XML = Oid 142
 
 -- Array Types
 
-pattern ACLItemArray :: PQ.Oid
-pattern ACLItemArray = PQ.Oid 1034
+pattern ACLItemArray :: Oid
+pattern ACLItemArray = Oid 1034
 
-pattern BitArray :: PQ.Oid
-pattern BitArray = PQ.Oid 1561
+pattern BitArray :: Oid
+pattern BitArray = Oid 1561
 
-pattern BoolArray :: PQ.Oid
-pattern BoolArray = PQ.Oid 1000
+pattern BoolArray :: Oid
+pattern BoolArray = Oid 1000
 
-pattern BoxArray :: PQ.Oid
-pattern BoxArray = PQ.Oid 1020
+pattern BoxArray :: Oid
+pattern BoxArray = Oid 1020
 
-pattern BPCharArray :: PQ.Oid
-pattern BPCharArray = PQ.Oid 1014
+pattern BPCharArray :: Oid
+pattern BPCharArray = Oid 1014
 
-pattern ByteaArray :: PQ.Oid
-pattern ByteaArray = PQ.Oid 1001
+pattern ByteaArray :: Oid
+pattern ByteaArray = Oid 1001
 
-pattern CharArray :: PQ.Oid
-pattern CharArray = PQ.Oid 1002
+pattern CharArray :: Oid
+pattern CharArray = Oid 1002
 
-pattern CIDArray :: PQ.Oid
-pattern CIDArray = PQ.Oid 1012
+pattern CIDArray :: Oid
+pattern CIDArray = Oid 1012
 
-pattern CIDRArray :: PQ.Oid
-pattern CIDRArray = PQ.Oid 651
+pattern CIDRArray :: Oid
+pattern CIDRArray = Oid 651
 
-pattern CircleArray :: PQ.Oid
-pattern CircleArray = PQ.Oid 719
+pattern CircleArray :: Oid
+pattern CircleArray = Oid 719
 
-pattern CStringArray :: PQ.Oid
-pattern CStringArray = PQ.Oid 1263
+pattern CStringArray :: Oid
+pattern CStringArray = Oid 1263
 
-pattern DateArray :: PQ.Oid
-pattern DateArray = PQ.Oid 1182
+pattern DateArray :: Oid
+pattern DateArray = Oid 1182
 
-pattern DateRangeArray :: PQ.Oid
-pattern DateRangeArray = PQ.Oid 3913
+pattern DateRangeArray :: Oid
+pattern DateRangeArray = Oid 3913
 
-pattern Float4Array :: PQ.Oid
-pattern Float4Array = PQ.Oid 1021
+pattern Float4Array :: Oid
+pattern Float4Array = Oid 1021
 
-pattern Float8Array :: PQ.Oid
-pattern Float8Array = PQ.Oid 1022
+pattern Float8Array :: Oid
+pattern Float8Array = Oid 1022
 
-pattern GTSVectorArray :: PQ.Oid
-pattern GTSVectorArray = PQ.Oid 3644
+pattern GTSVectorArray :: Oid
+pattern GTSVectorArray = Oid 3644
 
-pattern INetArray :: PQ.Oid
-pattern INetArray = PQ.Oid 1041
+pattern INetArray :: Oid
+pattern INetArray = Oid 1041
 
-pattern Int2Array :: PQ.Oid
-pattern Int2Array = PQ.Oid 1005
+pattern Int2Array :: Oid
+pattern Int2Array = Oid 1005
 
-pattern Int2VectorArray :: PQ.Oid
-pattern Int2VectorArray = PQ.Oid 1006
+pattern Int2VectorArray :: Oid
+pattern Int2VectorArray = Oid 1006
 
-pattern Int4Array :: PQ.Oid
-pattern Int4Array = PQ.Oid 1007
+pattern Int4Array :: Oid
+pattern Int4Array = Oid 1007
 
-pattern Int4RangeArray :: PQ.Oid
-pattern Int4RangeArray = PQ.Oid 3905
+pattern Int4RangeArray :: Oid
+pattern Int4RangeArray = Oid 3905
 
-pattern Int8Array :: PQ.Oid
-pattern Int8Array = PQ.Oid 1016
+pattern Int8Array :: Oid
+pattern Int8Array = Oid 1016
 
-pattern Int8RangeArray :: PQ.Oid
-pattern Int8RangeArray = PQ.Oid 3927
+pattern Int8RangeArray :: Oid
+pattern Int8RangeArray = Oid 3927
 
-pattern IntervalArray :: PQ.Oid
-pattern IntervalArray = PQ.Oid 1187
+pattern IntervalArray :: Oid
+pattern IntervalArray = Oid 1187
 
-pattern JSONArray :: PQ.Oid
-pattern JSONArray = PQ.Oid 199
+pattern JSONArray :: Oid
+pattern JSONArray = Oid 199
 
-pattern JSONBArray :: PQ.Oid
-pattern JSONBArray = PQ.Oid 3807
+pattern JSONBArray :: Oid
+pattern JSONBArray = Oid 3807
 
-pattern LineArray :: PQ.Oid
-pattern LineArray = PQ.Oid 629
+pattern LineArray :: Oid
+pattern LineArray = Oid 629
 
-pattern LSegArray :: PQ.Oid
-pattern LSegArray = PQ.Oid 1018
+pattern LSegArray :: Oid
+pattern LSegArray = Oid 1018
 
-pattern MacAddrArray :: PQ.Oid
-pattern MacAddrArray = PQ.Oid 1040
+pattern MacAddrArray :: Oid
+pattern MacAddrArray = Oid 1040
 
-pattern MoneyArray :: PQ.Oid
-pattern MoneyArray = PQ.Oid 791
+pattern MoneyArray :: Oid
+pattern MoneyArray = Oid 791
 
-pattern NameArray :: PQ.Oid
-pattern NameArray = PQ.Oid 1003
+pattern NameArray :: Oid
+pattern NameArray = Oid 1003
 
-pattern NumericArray :: PQ.Oid
-pattern NumericArray = PQ.Oid 1231
+pattern NumericArray :: Oid
+pattern NumericArray = Oid 1231
 
-pattern NumRangeArray :: PQ.Oid
-pattern NumRangeArray = PQ.Oid 3907
+pattern NumRangeArray :: Oid
+pattern NumRangeArray = Oid 3907
 
-pattern OIDArray :: PQ.Oid
-pattern OIDArray = PQ.Oid 1028
+pattern OIDArray :: Oid
+pattern OIDArray = Oid 1028
 
-pattern OIDVectorArray :: PQ.Oid
-pattern OIDVectorArray = PQ.Oid 1013
+pattern OIDVectorArray :: Oid
+pattern OIDVectorArray = Oid 1013
 
-pattern PathArray :: PQ.Oid
-pattern PathArray = PQ.Oid 1019
+pattern PathArray :: Oid
+pattern PathArray = Oid 1019
 
-pattern PointArray :: PQ.Oid
-pattern PointArray = PQ.Oid 1017
+pattern PointArray :: Oid
+pattern PointArray = Oid 1017
 
-pattern PolygonArray :: PQ.Oid
-pattern PolygonArray = PQ.Oid 1027
+pattern PolygonArray :: Oid
+pattern PolygonArray = Oid 1027
 
-pattern RefCursorArray :: PQ.Oid
-pattern RefCursorArray = PQ.Oid 2201
+pattern RefCursorArray :: Oid
+pattern RefCursorArray = Oid 2201
 
-pattern RegClassArray :: PQ.Oid
-pattern RegClassArray = PQ.Oid 2210
+pattern RegClassArray :: Oid
+pattern RegClassArray = Oid 2210
 
-pattern RegConfigArray :: PQ.Oid
-pattern RegConfigArray = PQ.Oid 3735
+pattern RegConfigArray :: Oid
+pattern RegConfigArray = Oid 3735
 
-pattern RegDictionaryArray :: PQ.Oid
-pattern RegDictionaryArray = PQ.Oid 3770
+pattern RegDictionaryArray :: Oid
+pattern RegDictionaryArray = Oid 3770
 
-pattern RegOperArray :: PQ.Oid
-pattern RegOperArray = PQ.Oid 2208
+pattern RegOperArray :: Oid
+pattern RegOperArray = Oid 2208
 
-pattern RegOperatorArray :: PQ.Oid
-pattern RegOperatorArray = PQ.Oid 2209
+pattern RegOperatorArray :: Oid
+pattern RegOperatorArray = Oid 2209
 
-pattern RegProcArray :: PQ.Oid
-pattern RegProcArray = PQ.Oid 1008
+pattern RegProcArray :: Oid
+pattern RegProcArray = Oid 1008
 
-pattern RegProcedureArray :: PQ.Oid
-pattern RegProcedureArray = PQ.Oid 2207
+pattern RegProcedureArray :: Oid
+pattern RegProcedureArray = Oid 2207
 
-pattern RegTypeArray :: PQ.Oid
-pattern RegTypeArray = PQ.Oid 2211
+pattern RegTypeArray :: Oid
+pattern RegTypeArray = Oid 2211
 
-pattern TextArray :: PQ.Oid
-pattern TextArray = PQ.Oid 1009
+pattern TextArray :: Oid
+pattern TextArray = Oid 1009
 
-pattern TIDArray :: PQ.Oid
-pattern TIDArray = PQ.Oid 1010
+pattern TIDArray :: Oid
+pattern TIDArray = Oid 1010
 
-pattern TimeArray :: PQ.Oid
-pattern TimeArray = PQ.Oid 1183
+pattern TimeArray :: Oid
+pattern TimeArray = Oid 1183
 
-pattern TimestampArray :: PQ.Oid
-pattern TimestampArray = PQ.Oid 1115
+pattern TimestampArray :: Oid
+pattern TimestampArray = Oid 1115
 
-pattern TimestampTZArray :: PQ.Oid
-pattern TimestampTZArray = PQ.Oid 1185
+pattern TimestampTZArray :: Oid
+pattern TimestampTZArray = Oid 1185
 
-pattern TimeTZArray :: PQ.Oid
-pattern TimeTZArray = PQ.Oid 1270
+pattern TimeTZArray :: Oid
+pattern TimeTZArray = Oid 1270
 
-pattern TSQueryArray :: PQ.Oid
-pattern TSQueryArray = PQ.Oid 3645
+pattern TSQueryArray :: Oid
+pattern TSQueryArray = Oid 3645
 
-pattern TSRangeArray :: PQ.Oid
-pattern TSRangeArray = PQ.Oid 3909
+pattern TSRangeArray :: Oid
+pattern TSRangeArray = Oid 3909
 
-pattern TSTZRangeArray :: PQ.Oid
-pattern TSTZRangeArray = PQ.Oid 3911
+pattern TSTZRangeArray :: Oid
+pattern TSTZRangeArray = Oid 3911
 
-pattern TSVectorArray :: PQ.Oid
-pattern TSVectorArray = PQ.Oid 3643
+pattern TSVectorArray :: Oid
+pattern TSVectorArray = Oid 3643
 
-pattern UUIDArray :: PQ.Oid
-pattern UUIDArray = PQ.Oid 2951
+pattern UUIDArray :: Oid
+pattern UUIDArray = Oid 2951
 
-pattern VarbitArray :: PQ.Oid
-pattern VarbitArray = PQ.Oid 1563
+pattern VarbitArray :: Oid
+pattern VarbitArray = Oid 1563
 
-pattern VarcharArray :: PQ.Oid
-pattern VarcharArray = PQ.Oid 1015
+pattern VarcharArray :: Oid
+pattern VarcharArray = Oid 1015
 
-pattern XIDArray :: PQ.Oid
-pattern XIDArray = PQ.Oid 1011
+pattern XIDArray :: Oid
+pattern XIDArray = Oid 1011
 
-pattern XMLArray :: PQ.Oid
-pattern XMLArray = PQ.Oid 143
+pattern XMLArray :: Oid
+pattern XMLArray = Oid 143
