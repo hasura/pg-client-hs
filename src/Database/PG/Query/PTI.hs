@@ -1,12 +1,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE PatternSynonyms #-}
 
-{-|
-Description: Oid constants.
-
-All these are taken from this declaration file in the postgres repo:
-https://github.com/postgres/postgres/blob/master/src/include/catalog/pg_type.dat
--}
+-- |
+-- Description: Oid constants.
+--
+-- All these are taken from this declaration file in the postgres repo:
+-- https://github.com/postgres/postgres/blob/master/src/include/catalog/pg_type.dat
 module Database.PG.Query.PTI where
 
 import Database.PostgreSQL.LibPQ (Oid (..))
@@ -82,6 +81,7 @@ arrayOf = \case
   _ -> Unknown
 
 -- * Constants
+
 --
 -- We use pattern synonyms for the Oids so that we can pattern-match on them.
 
