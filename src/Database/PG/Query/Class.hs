@@ -459,58 +459,58 @@ toPrepValHelper :: PQ.Oid -> (a -> PE.Encoding) -> a -> PrepArg
 toPrepValHelper o e a = (o, Just (PE.encodingBytes $ e a, PQ.Binary))
 
 instance (ToJSON a) => ToPrepArg (AltJ a) where
-  toPrepVal (AltJ a) = toPrepValHelper PTI.json PE.bytea_lazy $ encode a
+  toPrepVal (AltJ a) = toPrepValHelper PTI.Json PE.bytea_lazy $ encode a
 
 instance ToPrepArg Word64 where
-  toPrepVal = toPrepValHelper PTI.int8 PE.int8_word64
+  toPrepVal = toPrepValHelper PTI.Int8 PE.int8_word64
 
 instance ToPrepArg Int64 where
-  toPrepVal = toPrepValHelper PTI.int8 PE.int8_int64
+  toPrepVal = toPrepValHelper PTI.Int8 PE.int8_int64
 
 instance ToPrepArg Int32 where
-  toPrepVal = toPrepValHelper PTI.int4 PE.int4_int32
+  toPrepVal = toPrepValHelper PTI.Int4 PE.int4_int32
 
 instance ToPrepArg Int16 where
-  toPrepVal = toPrepValHelper PTI.int2 PE.int2_int16
+  toPrepVal = toPrepValHelper PTI.Int2 PE.int2_int16
 
 instance ToPrepArg Float where
-  toPrepVal = toPrepValHelper PTI.float4 PE.float4
+  toPrepVal = toPrepValHelper PTI.Float4 PE.float4
 
 instance ToPrepArg Double where
-  toPrepVal = toPrepValHelper PTI.float8 PE.float8
+  toPrepVal = toPrepValHelper PTI.Float8 PE.float8
 
 instance ToPrepArg Scientific where
-  toPrepVal = toPrepValHelper PTI.numeric PE.numeric
+  toPrepVal = toPrepValHelper PTI.Numeric PE.numeric
 
 instance ToPrepArg Char where
-  toPrepVal = toPrepValHelper PTI.text PE.char_utf8
+  toPrepVal = toPrepValHelper PTI.Text PE.char_utf8
 
 instance ToPrepArg Text where
-  toPrepVal = toPrepValHelper PTI.text PE.text_strict
+  toPrepVal = toPrepValHelper PTI.Text PE.text_strict
 
 instance ToPrepArg Lazy.Text where
-  toPrepVal = toPrepValHelper PTI.text PE.text_lazy
+  toPrepVal = toPrepValHelper PTI.Text PE.text_lazy
 
 instance ToPrepArg ByteString where
-  toPrepVal = toPrepValHelper PTI.bytea PE.bytea_strict
+  toPrepVal = toPrepValHelper PTI.Bytea PE.bytea_strict
 
 instance ToPrepArg Lazy.ByteString where
-  toPrepVal = toPrepValHelper PTI.bytea PE.bytea_lazy
+  toPrepVal = toPrepValHelper PTI.Bytea PE.bytea_lazy
 
 instance ToPrepArg LocalTime where
-  toPrepVal = toPrepValHelper PTI.timestamp PE.timestamp_int
+  toPrepVal = toPrepValHelper PTI.Timestamp PE.timestamp_int
 
 instance ToPrepArg UTCTime where
-  toPrepVal = toPrepValHelper PTI.timestamptz PE.timestamptz_int
+  toPrepVal = toPrepValHelper PTI.Timestamptz PE.timestamptz_int
 
 instance ToPrepArg Bool where
-  toPrepVal = toPrepValHelper PTI.bool PE.bool
+  toPrepVal = toPrepValHelper PTI.Bool PE.bool
 
 instance ToPrepArg Day where
-  toPrepVal = toPrepValHelper PTI.date PE.date
+  toPrepVal = toPrepValHelper PTI.Date PE.date
 
 instance ToPrepArg UUID where
-  toPrepVal = toPrepValHelper PTI.uuid PE.uuid
+  toPrepVal = toPrepValHelper PTI.Uuid PE.uuid
 
 type JSON :: Type
 newtype JSON = JSON Value
@@ -523,15 +523,15 @@ newtype JSONB = JSONB Value
   deriving newtype (Hashable)
 
 instance ToPrepArg JSON where
-  toPrepVal (JSON j) = toPrepValHelper PTI.json PE.json_ast j
+  toPrepVal (JSON j) = toPrepValHelper PTI.Json PE.json_ast j
 
 instance ToPrepArg JSONB where
-  toPrepVal (JSONB j) = toPrepValHelper PTI.jsonb PE.jsonb_ast j
+  toPrepVal (JSONB j) = toPrepValHelper PTI.Jsonb PE.jsonb_ast j
 
 instance (ToPrepArg a) => ToPrepArg (Maybe a) where
   toPrepVal (Just a) = toPrepVal a
   -- FIX ME, the oid here should be particular to the type
-  toPrepVal Nothing = (PTI.auto, Nothing)
+  toPrepVal Nothing = (PTI.Auto, Nothing)
 
 instance (ToPrepArg a) => ToPrepArgs [a] where
   toPrepArgs = map toPrepVal
