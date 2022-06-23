@@ -454,7 +454,8 @@ instance ToPrepArgs () where
 -- | Convert a value into a prepared query argument.
 toPrepArg :: forall a. ToPrepArg a => a -> PrepArg
 toPrepArg x = (oid @a, fmap go (encoder x))
-  where go e = (PE.encodingBytes e, PQ.Binary)
+  where
+    go e = (PE.encodingBytes e, PQ.Binary)
 
 -- | Tools for preparing values to be query parameters. A prepared query
 -- parameter (or 'PrepArg') contains an Oid (allowing Postgres to deduce its
@@ -463,7 +464,6 @@ toPrepArg x = (oid @a, fmap go (encoder x))
 -- to the first two: what is its type, and how do we encode it?
 type ToPrepArg :: Type -> Constraint
 class ToPrepArg a where
-
   -- | Encode a value with a postgres encoder. If the value is missing (i.e.
   -- 'Nothing'), the encoder should also be missing.
   encoder :: a -> Maybe PE.Encoding
@@ -479,7 +479,8 @@ instance (ToJSON a) => ToPrepArg (AltJ a) where
 
 instance ToPrepArg a => ToPrepArg [a] where
   encoder = pure . PE.array_foldable (fromIntegral cuint) encoder
-    where PQ.Oid cuint = oid @a
+    where
+      PQ.Oid cuint = oid @a
 
   oid = PTI.arrayOf (oid @a)
 
