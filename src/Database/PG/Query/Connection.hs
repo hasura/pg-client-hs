@@ -382,7 +382,7 @@ assertResCmd conn mRes = do
         PGIUnexpected "cmd expected; tuples found"
 
 type PGCancelErr :: Type
-data PGCancelErr = PGCancelErr Text
+newtype PGCancelErr = PGCancelErr Text
   deriving stock (Eq, Show)
   deriving anyclass (Exception)
 
