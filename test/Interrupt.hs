@@ -1,7 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
@@ -18,9 +16,11 @@ import Control.Concurrent
   )
 import Control.Concurrent.Interrupt (interruptOnAsyncException)
 import Control.Exception.Safe (Exception, onException, throwIO, uninterruptibleMask_)
-import Control.Monad (liftM2, when)
+import Control.Monad (liftM2, unless)
+import Data.Bifunctor (first)
 import Data.IORef (IORef, atomicModifyIORef', newIORef, readIORef)
 import Data.Kind (Type)
+import Data.Maybe (isJust)
 import Data.Time (NominalDiffTime, diffUTCTime, getCurrentTime)
 import System.Timeout (timeout)
 import Test.Hspec (Spec, describe, it, shouldBe, shouldThrow)
@@ -172,7 +172,7 @@ cancellableSleep t cancelled = do
   where
     spinUntil cond = do
       stop <- cond
-      when (not stop) $ do
+      unless stop $ do
         threadDelay (1 * ms)
         spinUntil cond
 
@@ -180,7 +180,7 @@ getCancel :: IO (IO (), IO Bool)
 getCancel = do
   c :: MVar () <- newEmptyMVar
   let cancel = putMVar c ()
-      cancelled = maybe False (const True) <$> tryReadMVar c
+      cancelled = isJust <$> tryReadMVar c
   return (cancel, cancelled)
 
 type CancelException :: Type
@@ -200,7 +200,7 @@ roundTo :: Int -> NominalDiffTime -> Int
 roundTo interval t = round (t * fromIntegral s / fromIntegral interval) * interval
 
 roundLog :: Int -> Log -> [(Int, String)]
-roundLog interval events = map (\(t, e) -> (roundTo interval t, e)) events
+roundLog interval = map (first (roundTo interval))
 
 withLogger :: ((String -> IO ()) -> IO ()) -> IO Log
 withLogger f = do
@@ -215,5 +215,5 @@ withLogger f = do
 trace :: (String -> IO ()) -> String -> IO () -> IO ()
 trace log label action = do
   log $ label <> " start"
-  action `onException` (log $ label <> " exception")
+  action `onException` log (label <> " exception")
   log $ label <> " end"

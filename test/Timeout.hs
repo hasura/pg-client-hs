@@ -1,5 +1,3 @@
-{-# LANGUAGE LambdaCase #-}
-{-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-incomplete-uni-patterns #-}
@@ -83,6 +81,7 @@ mkPool cancelable = do
   dbUri <- BS.pack <$> Env.getEnv "DATABASE_URL"
   initPGPool (connInfo dbUri) connParams logger
   where
+    logger = print
     connInfo uri =
       ConnInfo
         { ciRetries = 0,
@@ -98,7 +97,6 @@ mkPool cancelable = do
           cpTimeout = Nothing,
           cpCancel = cancelable
         }
-    logger event = putStrLn $ show event
 
 mode :: TxMode
 mode = (Serializable, Just ReadWrite)
