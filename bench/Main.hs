@@ -107,7 +107,7 @@ mkTx1H :: Bool -> HTx B.ByteString
 mkTx1H isPrepared =
   HT.statement 3 $ HS.Statement (TE.encodeUtf8 q1) encoder decoder isPrepared
   where
-    encoder = HE.param $ HE.nonNullable $ HE.int8
+    encoder = HE.param $ HE.nonNullable HE.int8
     decoder = HD.singleRow $ HD.column $ HD.nonNullable $ HD.custom $ \_ bs -> return bs
 
 q2 :: T.Text

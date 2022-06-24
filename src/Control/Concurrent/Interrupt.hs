@@ -51,7 +51,7 @@ interruptOnAsyncException interrupt action = mask $ \restore -> do
       -- Cancelling might throw an exception; we save that and re-raise it,
       -- but not before doing or job of passing the asynchronous exception on
       -- to our child and waiting for it to terminate.
-      interruptRes :: Either SomeException () <- try $ interrupt
+      interruptRes :: Either SomeException () <- try interrupt
       throwTo (asyncThreadId x) e
       waitRes :: Either SomeException a <- try $ wait x
       case (interruptRes, waitRes) of
