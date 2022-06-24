@@ -194,8 +194,7 @@ withQE ::
   r ->
   Bool ->
   TxET e m a
-withQE ef q r prep =
-  rawQE ef q args prep
+withQE ef q r = rawQE ef q args
   where
     args = toPrepArgs r
 
@@ -217,7 +216,7 @@ rawQE ::
 rawQE ef q args prep = TxET $
   ReaderT $ \pgConn ->
     withExceptT (ef . txErrF) $
-      (hoist liftIO) $
+      hoist liftIO $
         execQuery pgConn $ PGQuery (mkTemplate stmt) args prep fromRes
   where
     txErrF = PGTxErr stmt args prep
@@ -231,7 +230,7 @@ multiQE ::
 multiQE ef q = TxET $
   ReaderT $ \pgConn ->
     withExceptT (ef . txErrF) $
-      (hoist liftIO) $
+      hoist liftIO $
         execMulti pgConn (mkTemplate stmt) fromRes
   where
     txErrF = PGTxErr stmt [] False
