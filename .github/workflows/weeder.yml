@@ -1,0 +1,78 @@
+name: weeder
+
+on:
+  push: { branches: [ "main" ] }
+  pull_request: { branches: [ "main" ] }
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        ghc: [ "8.10.7" ]
+        cabal: [ "latest" ] 
+
+    steps:
+      - name: Checkout this repository.
+        uses: actions/checkout@v2
+
+      - name: Set up Haskell tooling.
+        uses: haskell/actions/setup@v1
+        id: set-up-haskell-tooling
+        with:
+          ghc-version: ${{ matrix.ghc }}
+          cabal-version: ${{ matrix.cabal }}
+
+      - name: Set up weeder store directory.
+        id: set-up-weeder-store
+        run: |
+          mkdir -p $HOME/weeder-store
+
+          cabal \
+            --store-dir="${HOME}/weeder-store" \
+            update \
+            --project='./ci/${{ matrix.ghc }}/weeder.project'
+
+          echo '::set-output name=weeder-store::${HOME}/weeder-store'
+
+      - name: Cache weeder.
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ steps.set-up-weeder-store.outputs.weeder-store }}
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./ci/${{ matrix.ghc }}/weeder.project.freeze') }}-0
+          restore-keys: |
+            ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./ci/${{ matrix.ghc }}/weeder.project.freeze') }}-0
+
+      - name: Install weeder.
+        run: |
+          cabal \
+            --store-dir="${HOME}/weeder-store" \
+            install \
+            --project='./ci/${{ matrix.ghc }}/weeder.project' \
+            weeder
+
+      - name: Cache compiled dependency artifacts.
+        uses: actions/cache@v3
+        with:
+          path: |
+            ${{ steps.set-up-haskell-tooling.outputs.cabal-store }}
+          key: ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./ci/${{ matrix.ghc }}/ci.project.freeze') }}-1
+          restore-keys: |
+            ${{ runner.os }}-cabal-${{ matrix.ghc }}-${{ hashFiles('./ci/${{ matrix.ghc }}/ci.project.freeze') }}-1
+
+      - name: Compile dependencies.
+        run: |
+          make update \
+            PROJECT='ci/${{ matrix.ghc }}/ci.project'
+          make build-deps \
+            PROJECT='ci/${{ matrix.ghc }}/ci.project'
+
+      - name: Compile library.
+        run: |
+          make build \
+            PROJECT='ci/${{ matrix.ghc }}/ci.project'
+
+      - name: Run weeder.
+        run: |
+          ${HOME}/.cabal/bin/weeder
