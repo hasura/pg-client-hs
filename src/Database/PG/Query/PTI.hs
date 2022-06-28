@@ -17,129 +17,67 @@ arrayOf :: Oid -> Oid
 arrayOf = \case
   Auto -> Auto
   ACLItem -> ACLItemArray
-  ACLItemArray -> ACLItemArray
   Bit -> BitArray
-  BitArray -> BitArray
   Bool -> BoolArray
-  BoolArray -> BoolArray
   Box -> BoxArray
-  BoxArray -> BoxArray
   BPChar -> BPCharArray
-  BPCharArray -> BPCharArray
   Bytea -> ByteaArray
-  ByteaArray -> ByteaArray
   Char -> CharArray
-  CharArray -> CharArray
   CID -> CIDArray
-  CIDArray -> CIDArray
   CIDR -> CIDRArray
-  CIDRArray -> CIDRArray
   Circle -> CircleArray
-  CircleArray -> CircleArray
   CString -> CStringArray
-  CStringArray -> CStringArray
   Date -> DateArray
-  DateArray -> DateArray
   DateRange -> DateRangeArray
-  DateRangeArray -> DateRangeArray
   Float4 -> Float4Array
-  Float4Array -> Float4Array
   Float8 -> Float8Array
-  Float8Array -> Float8Array
   GTSVector -> GTSVectorArray
-  GTSVectorArray -> GTSVectorArray
   INet -> INetArray
-  INetArray -> INetArray
   Int2 -> Int2Array
-  Int2Array -> Int2Array
   Int2Vector -> Int2VectorArray
-  Int2VectorArray -> Int2VectorArray
   Int4 -> Int4Array
-  Int4Array -> Int4Array
   Int4Range -> Int4RangeArray
-  Int4RangeArray -> Int4RangeArray
   Int8 -> Int8Array
-  Int8Array -> Int8Array
   Int8Range -> Int8RangeArray
-  Int8RangeArray -> Int8RangeArray
   Interval -> IntervalArray
-  IntervalArray -> IntervalArray
   JSON -> JSONArray
-  JSONArray -> JSONArray
   JSONB -> JSONBArray
-  JSONBArray -> JSONBArray
   Line -> LineArray
-  LineArray -> LineArray
   LSeg -> LSegArray
-  LSegArray -> LSegArray
   MacAddr -> MacAddrArray
-  MacAddrArray -> MacAddrArray
   Money -> MoneyArray
-  MoneyArray -> MoneyArray
   Name -> NameArray
-  NameArray -> NameArray
   Numeric -> NumericArray
-  NumericArray -> NumericArray
   NumRange -> NumRangeArray
-  NumRangeArray -> NumRangeArray
   OID -> OIDArray
-  OIDArray -> OIDArray
   OIDVector -> OIDVectorArray
-  OIDVectorArray -> OIDVectorArray
   Path -> PathArray
-  PathArray -> PathArray
   Point -> PointArray
-  PointArray -> PointArray
   Polygon -> PolygonArray
-  PolygonArray -> PolygonArray
   RefCursor -> RefCursorArray
-  RefCursorArray -> RefCursorArray
   RegClass -> RegClassArray
-  RegClassArray -> RegClassArray
   RegConfig -> RegConfigArray
-  RegConfigArray -> RegConfigArray
   RegDictionary -> RegDictionaryArray
-  RegDictionaryArray -> RegDictionaryArray
   RegOper -> RegOperArray
-  RegOperArray -> RegOperArray
   RegOperator -> RegOperatorArray
-  RegOperatorArray -> RegOperatorArray
   RegProc -> RegProcArray
-  RegProcArray -> RegProcArray
   RegProcedure -> RegProcedureArray
-  RegProcedureArray -> RegProcedureArray
   RegType -> RegTypeArray
-  RegTypeArray -> RegTypeArray
   Text -> TextArray
-  TextArray -> TextArray
   TID -> TIDArray
-  TIDArray -> TIDArray
   Time -> TimeArray
-  TimeArray -> TimeArray
   Timestamp -> TimestampArray
-  TimestampArray -> TimestampArray
   TimestampTZ -> TimestampTZArray
-  TimestampTZArray -> TimestampTZArray
   TimeTZ -> TimeTZArray
-  TimeTZArray -> TimeTZArray
   TSQuery -> TSQueryArray
-  TSQueryArray -> TSQueryArray
   TSRange -> TSRangeArray
-  TSRangeArray -> TSRangeArray
   TSTZRange -> TSTZRangeArray
-  TSTZRangeArray -> TSTZRangeArray
   TSVector -> TSVectorArray
-  TSVectorArray -> TSVectorArray
   UUID -> UUIDArray
-  UUIDArray -> UUIDArray
   Varbit -> VarbitArray
-  VarbitArray -> VarbitArray
   Varchar -> VarcharArray
-  VarcharArray -> VarcharArray
   XID -> XIDArray
-  XIDArray -> XIDArray
   XML -> XMLArray
-  XMLArray -> XMLArray
   _ -> Unknown
 
 -- * Constants
