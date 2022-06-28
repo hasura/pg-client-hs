@@ -1,10 +1,7 @@
-{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
-{-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 
 module Database.PG.Query.Class
   ( WithCount (..),
@@ -14,7 +11,7 @@ module Database.PG.Query.Class
     FromRow (..),
     FromRes (..),
     ToPrepArg (..),
-    toPrepArg,
+    toPrepValHelper,
     ToPrepArgs (..),
     SingleRow (..),
     Discard (..),
@@ -451,106 +448,69 @@ class ToPrepArgs a where
 instance ToPrepArgs () where
   toPrepArgs _ = []
 
--- | Convert a value into a prepared query argument.
-toPrepArg :: forall a. ToPrepArg a => a -> PrepArg
-toPrepArg x = (oid @a, fmap go (encoder x))
-  where
-    go e = (PE.encodingBytes e, PQ.Binary)
-
--- | Tools for preparing values to be query parameters. A prepared query
--- parameter (or 'PrepArg') contains an Oid (allowing Postgres to deduce its
--- type), a 'ByteString' (the serialised value) and a format flag (text or
--- binary). In our case, the format is always binary, so it really comes down
--- to the first two: what is its type, and how do we encode it?
 type ToPrepArg :: Type -> Constraint
 class ToPrepArg a where
-  -- | Encode a value with a postgres encoder. If the value is missing (i.e.
-  -- 'Nothing'), the encoder should also be missing.
-  encoder :: a -> Maybe PE.Encoding
+  toPrepVal :: a -> PrepArg
 
-  -- | Get the OID for this type. Because we won't always have a value (e.g.
-  -- when we are dealing with an empty list of values), this function must be
-  -- called with a visible type parameter. For example, @'oid' @'Double'@.
-  oid :: PQ.Oid
+instance ToPrepArg PrepArg where
+  toPrepVal arg = arg
+
+toPrepValHelper :: PQ.Oid -> (a -> PE.Encoding) -> a -> PrepArg
+toPrepValHelper o e a = (o, Just (PE.encodingBytes $ e a, PQ.Binary))
 
 instance (ToJSON a) => ToPrepArg (AltJ a) where
-  encoder (AltJ x) = pure . PE.bytea_lazy $ encode x
-  oid = PTI.JSON
-
-instance ToPrepArg a => ToPrepArg [a] where
-  encoder = pure . PE.array_foldable (fromIntegral cuint) encoder
-    where
-      PQ.Oid cuint = oid @a
-
-  oid = PTI.arrayOf (oid @a)
+  toPrepVal (AltJ a) = toPrepValHelper PTI.JSON PE.bytea_lazy $ encode a
 
 instance ToPrepArg Word64 where
-  encoder = pure . PE.int8_word64
-  oid = PTI.Int8
+  toPrepVal = toPrepValHelper PTI.Int8 PE.int8_word64
 
 instance ToPrepArg Int64 where
-  encoder = pure . PE.int8_int64
-  oid = PTI.Int8
+  toPrepVal = toPrepValHelper PTI.Int8 PE.int8_int64
 
 instance ToPrepArg Int32 where
-  encoder = pure . PE.int4_int32
-  oid = PTI.Int4
+  toPrepVal = toPrepValHelper PTI.Int4 PE.int4_int32
 
 instance ToPrepArg Int16 where
-  encoder = pure . PE.int2_int16
-  oid = PTI.Int2
+  toPrepVal = toPrepValHelper PTI.Int2 PE.int2_int16
 
 instance ToPrepArg Float where
-  encoder = pure . PE.float4
-  oid = PTI.Float4
+  toPrepVal = toPrepValHelper PTI.Float4 PE.float4
 
 instance ToPrepArg Double where
-  encoder = pure . PE.float8
-  oid = PTI.Float8
+  toPrepVal = toPrepValHelper PTI.Float8 PE.float8
 
 instance ToPrepArg Scientific where
-  encoder = pure . PE.numeric
-  oid = PTI.Numeric
+  toPrepVal = toPrepValHelper PTI.Numeric PE.numeric
 
 instance ToPrepArg Char where
-  encoder = pure . PE.char_utf8
-  oid = PTI.Text
+  toPrepVal = toPrepValHelper PTI.Text PE.char_utf8
 
 instance ToPrepArg Text where
-  encoder = pure . PE.text_strict
-  oid = PTI.Text
+  toPrepVal = toPrepValHelper PTI.Text PE.text_strict
 
 instance ToPrepArg Lazy.Text where
-  encoder = pure . PE.text_lazy
-  oid = PTI.Text
+  toPrepVal = toPrepValHelper PTI.Text PE.text_lazy
 
 instance ToPrepArg ByteString where
-  encoder = pure . PE.bytea_strict
-  oid = PTI.Bytea
+  toPrepVal = toPrepValHelper PTI.Bytea PE.bytea_strict
 
 instance ToPrepArg Lazy.ByteString where
-  encoder = pure . PE.bytea_lazy
-  oid = PTI.Bytea
+  toPrepVal = toPrepValHelper PTI.Bytea PE.bytea_lazy
 
 instance ToPrepArg LocalTime where
-  encoder = pure . PE.timestamp_int
-  oid = PTI.Timestamp
+  toPrepVal = toPrepValHelper PTI.Timestamp PE.timestamp_int
 
 instance ToPrepArg UTCTime where
-  encoder = pure . PE.timestamptz_int
-  oid = PTI.TimestampTZ
+  toPrepVal = toPrepValHelper PTI.TimestampTZ PE.timestamptz_int
 
 instance ToPrepArg Bool where
-  encoder = pure . PE.bool
-  oid = PTI.Bool
+  toPrepVal = toPrepValHelper PTI.Bool PE.bool
 
 instance ToPrepArg Day where
-  encoder = pure . PE.date
-  oid = PTI.Date
+  toPrepVal = toPrepValHelper PTI.Date PE.date
 
 instance ToPrepArg UUID where
-  encoder = pure . PE.uuid
-  oid = PTI.UUID
+  toPrepVal = toPrepValHelper PTI.UUID PE.uuid
 
 type JSON :: Type
 newtype JSON = JSON Value
@@ -563,73 +523,72 @@ newtype JSONB = JSONB Value
   deriving newtype (Hashable)
 
 instance ToPrepArg JSON where
-  encoder (JSON j) = pure (PE.json_ast j)
-  oid = PTI.JSON
+  toPrepVal (JSON j) = toPrepValHelper PTI.JSON PE.json_ast j
 
 instance ToPrepArg JSONB where
-  encoder (JSONB j) = pure (PE.jsonb_ast j)
-  oid = PTI.JSONB
+  toPrepVal (JSONB j) = toPrepValHelper PTI.JSONB PE.jsonb_ast j
 
 instance (ToPrepArg a) => ToPrepArg (Maybe a) where
-  encoder x = x >>= encoder
-  oid = oid @a
+  toPrepVal (Just a) = toPrepVal a
+  -- FIX ME, the oid here should be particular to the type
+  toPrepVal Nothing = (PTI.Auto, Nothing)
 
 instance (ToPrepArg a) => ToPrepArgs [a] where
-  toPrepArgs = map toPrepArg
+  toPrepArgs = map toPrepVal
 
 instance (ToPrepArg a) => ToPrepArgs (Identity a) where
   toPrepArgs (Identity a) =
-    [toPrepArg a]
+    [toPrepVal a]
 
 instance (ToPrepArg a, ToPrepArg b) => ToPrepArgs (a, b) where
   toPrepArgs (a, b) =
-    [ toPrepArg a,
-      toPrepArg b
+    [ toPrepVal a,
+      toPrepVal b
     ]
 
 instance (ToPrepArg a, ToPrepArg b, ToPrepArg c) => ToPrepArgs (a, b, c) where
   toPrepArgs (a, b, c) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c
     ]
 
 instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d) => ToPrepArgs (a, b, c, d) where
   toPrepArgs (a, b, c, d) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d
     ]
 
 instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e) => ToPrepArgs (a, b, c, d, e) where
   toPrepArgs (a, b, c, d, e) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e
     ]
 
 instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPrepArg f) => ToPrepArgs (a, b, c, d, e, f) where
   toPrepArgs (a, b, c, d, e, f) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e,
-      toPrepArg f
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e,
+      toPrepVal f
     ]
 
 instance (ToPrepArg a, ToPrepArg b, ToPrepArg c, ToPrepArg d, ToPrepArg e, ToPrepArg f, ToPrepArg g) => ToPrepArgs (a, b, c, d, e, f, g) where
   toPrepArgs (a, b, c, d, e, f, g) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e,
-      toPrepArg f,
-      toPrepArg g
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e,
+      toPrepVal f,
+      toPrepVal g
     ]
 
 instance
@@ -637,14 +596,14 @@ instance
   ToPrepArgs (a, b, c, d, e, f, g, h)
   where
   toPrepArgs (a, b, c, d, e, f, g, h) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e,
-      toPrepArg f,
-      toPrepArg g,
-      toPrepArg h
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e,
+      toPrepVal f,
+      toPrepVal g,
+      toPrepVal h
     ]
 
 instance
@@ -652,15 +611,15 @@ instance
   ToPrepArgs (a, b, c, d, e, f, g, h, i)
   where
   toPrepArgs (a, b, c, d, e, f, g, h, i) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e,
-      toPrepArg f,
-      toPrepArg g,
-      toPrepArg h,
-      toPrepArg i
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e,
+      toPrepVal f,
+      toPrepVal g,
+      toPrepVal h,
+      toPrepVal i
     ]
 
 instance
@@ -668,14 +627,14 @@ instance
   ToPrepArgs (a, b, c, d, e, f, g, h, i, j)
   where
   toPrepArgs (a, b, c, d, e, f, g, h, i, j) =
-    [ toPrepArg a,
-      toPrepArg b,
-      toPrepArg c,
-      toPrepArg d,
-      toPrepArg e,
-      toPrepArg f,
-      toPrepArg g,
-      toPrepArg h,
-      toPrepArg i,
-      toPrepArg j
+    [ toPrepVal a,
+      toPrepVal b,
+      toPrepVal c,
+      toPrepVal d,
+      toPrepVal e,
+      toPrepVal f,
+      toPrepVal g,
+      toPrepVal h,
+      toPrepVal i,
+      toPrepVal j
     ]
