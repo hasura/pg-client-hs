@@ -17,6 +17,7 @@ module Database.PG.Query.Pool
     withExpiringPGconn,
     defaultConnParams,
     initPGPool,
+    resizePGPool,
     destroyPGPool,
     withConn,
     beginTx,
@@ -139,6 +140,14 @@ initPGPool ci cp logger = do
       return $ PGConn pqConn (cpAllowPrepare cp) (cpCancel cp) retryP logger ctr table createdAt (cpMbLifetime cp)
     destroyer = PQ.finish . pgPQConn
     diffTime = fromIntegral $ cpIdleTime cp
+
+resizePGPool ::
+  PGPool ->
+  Int ->
+  IO ()
+resizePGPool PGPool {..} size = do
+  RP.resizePool _pool size
+  RP.tryTrimPool _pool
 
 -- | Release all connections acquired by the pool.
 destroyPGPool :: PGPool -> IO ()
