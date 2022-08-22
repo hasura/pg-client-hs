@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Database.PG.Query.Class
   ( WithCount (..),
@@ -23,11 +24,13 @@ where
 
 -------------------------------------------------------------------------------
 
+import Data.Bifunctor (first )
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
 import Control.Monad.Trans.Except (ExceptT (..))
-import Data.Aeson (FromJSON, ToJSON, Value, eitherDecodeStrict, encode)
+import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
+import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
@@ -75,12 +78,22 @@ newtype SingleRow a = SingleRow
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
-mapEither :: (a -> c) -> (b -> d) -> Either a b -> Either c d
-mapEither f _ (Left a) = Left $ f a
-mapEither _ f (Right b) = Right $ f b
-
+-- | because of CockroachDB we don't know whether we're getting JSON or JSONB
+-- data back. Therefore we try one and then the other.
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict)
+  fromCol input =
+    case decodeJsonb of
+      Right result -> pure result
+      _ -> decodeJson
+      where
+        parse :: Value -> Either Text (AltJ a)
+        parse = fmap AltJ . first fromString . parseEither parseJSON
+
+        decodeJson :: Either Text (AltJ a)
+        decodeJson = fromColHelper PD.json_ast input >>= parse
+
+        decodeJsonb :: Either Text (AltJ a)
+        decodeJsonb = fromColHelper PD.jsonb_ast input >>= parse
 
 type FromCol :: Type -> Constraint
 class FromCol a where
