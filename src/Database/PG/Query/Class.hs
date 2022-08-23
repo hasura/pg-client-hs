@@ -81,19 +81,20 @@ newtype AltJ a = AltJ {getAltJ :: a}
 -- | because of CockroachDB we don't know whether we're getting JSON or JSONB
 -- data back. Therefore we try one and then the other.
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol input =
-    case decodeJsonb of
+  fromCol input = do
+    jsonValue <- case decodeJsonb of
       Right result -> pure result
       _ -> decodeJson
+    parse jsonValue
     where
       parse :: Value -> Either Text (AltJ a)
       parse = fmap AltJ . first fromString . parseEither parseJSON
 
-      decodeJson :: Either Text (AltJ a)
-      decodeJson = fromColHelper PD.json_ast input >>= parse
+      decodeJson :: Either Text Value
+      decodeJson = fromColHelper PD.json_ast input
 
-      decodeJsonb :: Either Text (AltJ a)
-      decodeJsonb = fromColHelper PD.jsonb_ast input >>= parse
+      decodeJsonb :: Either Text Value
+      decodeJsonb = fromColHelper PD.jsonb_ast input
 
 type FromCol :: Type -> Constraint
 class FromCol a where
