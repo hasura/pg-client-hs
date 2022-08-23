@@ -1,6 +1,10 @@
 .PHONY: all
 all:
 
+# when running locally, use the postgres instance from the `docker-compose.yml`
+# in this repo
+DOCKER_POSTGRES_DATABASE_URL=postgresql://hasura:hasura@127.0.0.1:64001/hasura
+
 .PHONY: format
 format:
 	cabal-fmt -i pg-client.cabal
@@ -46,12 +50,23 @@ build-all:
 	  --enable-benchmarks \
 	  all
 
+.PHONY: start-dbs
+start-dbs:
+	docker-compose up -d
+	sleep 10
+
+.PHONY: stop-dbs
+stop-dbs:
+	docker-compose down -v
+
 .PHONY: test-all
-test-all:
+test-all: start-dbs
+	export DATABASE_URL=$(DOCKER_POSTGRES_DATABASE_URL) && \
 	$(CABAL) test \
 	  --enable-tests \
 	  --enable-benchmarks \
 	  all
+	make stop-dbs
 
 .PHONY: ghcid
 ghcid:

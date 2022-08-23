@@ -7,6 +7,8 @@
 
 module Jsonb (specJsonb) where
 
+import Data.String
+import System.Environment qualified as Env
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -24,47 +26,62 @@ newtype TestValue = TestValue {hey :: Int}
 
 instance J.FromJSON TestValue
 
-stringface :: BS.ByteString
-stringface = "postgresql://hasura:hasura@127.0.0.1:65002/hasura"
+getPgUri :: (MonadIO m) => m BS.ByteString
+getPgUri = liftIO $ fromString <$> Env.getEnv "DATABASE_URL"
 
-pgDb, cockroachDb :: ConnInfo
-pgDb =
-  defaultConnInfo
-    { ciDetails = CDDatabaseURI stringface
+getPostgresConnect :: (MonadIO m) => m ConnInfo
+getPostgresConnect = do
+  dbUri <- getPgUri
+  pure $ defaultConnInfo
+    { ciDetails = CDDatabaseURI dbUri
     }
-cockroachDb =
-  defaultConnInfo
-    { ciDetails = CDDatabaseURI stringface
+
+getCockroachConnect :: (MonadIO m) => m ConnInfo
+getCockroachConnect = do
+  dbUri <- getPgUri
+  pure $ defaultConnInfo
+    { ciDetails = CDDatabaseURI dbUri
     }
 
 specJsonb :: Spec
 specJsonb = do
   describe "Feelings" $ do
     it "Querying 'json' from PostgreSQL" $ do
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pgDb (rawQE show "select '{\"hey\":42}'::json" [] False)
-      print i
+      pg <- getPostgresConnect
+      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pg
+        (rawQE show "select '{\"hey\":42}'::json" [] False)
+      i `shouldSatisfy` const True
 
     it "Querying 'jsonb' from PostgreSQL (note the difference in formatting and \\SOH prefix)" $ do
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pgDb (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      print i
+      pg <- getPostgresConnect
+      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pg
+          (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
+      i `shouldSatisfy` const True
 
     it "Querying 'json' from CockroachDB" $ do
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroachDb (rawQE show "select '{\"hey\":42}'::json" [] False)
-      print i
+      cockroach <- getCockroachConnect
+      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroach
+        (rawQE show "select '{\"hey\":42}'::json" [] False)
+      i `shouldSatisfy` const True
 
     it "Querying 'jsonb' from CockroachDB (note the difference in formatting and \\SOH prefix)" $ do
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroachDb (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      print i
+      cockroach <- getCockroachConnect
+      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroach
+        (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
+      i `shouldSatisfy` const True
 
-    -- This fails for both
     it "Querying 'jsonb' from PostgreSQL" $ do
       -- Note that 'AltJ' is simply a newtype wrapper that directs 'FromCol' to use 'FromJSON' to produce a Haskell Value of the specified type.
-      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT pgDb (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      print i
+      pg <- getPostgresConnect
+      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT pg
+          (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
+      i `shouldSatisfy` const True
 
     it "Querying 'jsonb' from CockroachDB" $ do
-      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT cockroachDb (rawQE show "select '{\"hey\":42}'::json" [] False)
-      print i
+      cockroach <- getCockroachConnect
+      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT cockroach
+        (rawQE show "select '{\"hey\":42}'::json" [] False)
+      i `shouldSatisfy` const True
 
 instance FromPGConnErr String where
   fromPGConnErr = show
