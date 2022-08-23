@@ -59,6 +59,13 @@ start-dbs:
 stop-dbs:
 	docker-compose down -v
 
+.PHONY: test-ci
+test-ci:
+	$(CABAL) test \
+	  --enable-tests \
+	  --enable-benchmarks \
+	  all
+
 .PHONY: test-all
 test-all: start-dbs
 	export DATABASE_URL=$(DOCKER_POSTGRES_DATABASE_URL) && \
