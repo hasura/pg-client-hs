@@ -20,8 +20,9 @@ import Database.PostgreSQL.LibPQ.Internal
 import GHC.Generics
 import Test.Hspec
 import Prelude
+import Data.Kind (Type)
 
-type TestValue :: *
+type TestValue :: Type 
 
 newtype TestValue = TestValue {hey :: Int}
   deriving stock (Show, Generic)
