@@ -21,6 +21,8 @@ import GHC.Generics
 import Test.Hspec
 import Prelude
 
+type TestValue :: *
+
 newtype TestValue = TestValue {hey :: Int}
   deriving stock (Show, Generic)
 
