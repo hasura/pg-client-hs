@@ -7,23 +7,22 @@
 
 module Jsonb (specJsonb) where
 
-import Data.String
-import System.Environment qualified as Env
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
-import qualified Data.Aeson as J
-import qualified Data.ByteString as BS
+import Data.Aeson qualified as J
+import Data.ByteString qualified as BS
+import Data.Kind (Type)
+import Data.String
 import Database.PG.Query
 import Database.PG.Query.Connection
 import Database.PostgreSQL.LibPQ.Internal
 import GHC.Generics
+import System.Environment qualified as Env
 import Test.Hspec
 import Prelude
-import Data.Kind (Type)
 
-type TestValue :: Type 
-
+type TestValue :: Type
 newtype TestValue = TestValue {hey :: Int}
   deriving stock (Show, Generic)
 
@@ -35,28 +34,35 @@ getPgUri = liftIO $ fromString <$> Env.getEnv "DATABASE_URL"
 getPostgresConnect :: (MonadIO m) => m ConnInfo
 getPostgresConnect = do
   dbUri <- getPgUri
-  pure $ defaultConnInfo
-    { ciDetails = CDDatabaseURI dbUri
-    }
+  pure $
+    defaultConnInfo
+      { ciDetails = CDDatabaseURI dbUri
+      }
 
 specJsonb :: Spec
 specJsonb = do
   describe "Feelings" $ do
     it "Querying 'json' from PostgreSQL" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pg
-        (rawQE show "select '{\"hey\":42}'::json" [] False)
+      SingleRow (Identity (i :: BS.ByteString)) <-
+        runTxT
+          pg
+          (rawQE show "select '{\"hey\":42}'::json" [] False)
       i `shouldSatisfy` const True
 
     it "Querying 'jsonb' from PostgreSQL (note the difference in formatting and \\SOH prefix)" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT pg
+      SingleRow (Identity (i :: BS.ByteString)) <-
+        runTxT
+          pg
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
       i `shouldSatisfy` const True
 
     it "Querying 'jsonb' from PostgreSQL" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT pg
+      SingleRow (Identity (AltJ (i :: TestValue))) <-
+        runTxT
+          pg
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
       i `shouldSatisfy` const True
 

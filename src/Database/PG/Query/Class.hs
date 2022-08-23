@@ -24,7 +24,6 @@ where
 
 -------------------------------------------------------------------------------
 
-import Data.Bifunctor (first )
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
@@ -32,6 +31,7 @@ import Control.Monad.Trans.Except (ExceptT (..))
 import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
+import Data.Bifunctor (first)
 import Data.ByteString (ByteString)
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
@@ -85,15 +85,15 @@ instance (FromJSON a) => FromCol (AltJ a) where
     case decodeJsonb of
       Right result -> pure result
       _ -> decodeJson
-      where
-        parse :: Value -> Either Text (AltJ a)
-        parse = fmap AltJ . first fromString . parseEither parseJSON
+    where
+      parse :: Value -> Either Text (AltJ a)
+      parse = fmap AltJ . first fromString . parseEither parseJSON
 
-        decodeJson :: Either Text (AltJ a)
-        decodeJson = fromColHelper PD.json_ast input >>= parse
+      decodeJson :: Either Text (AltJ a)
+      decodeJson = fromColHelper PD.json_ast input >>= parse
 
-        decodeJsonb :: Either Text (AltJ a)
-        decodeJsonb = fromColHelper PD.jsonb_ast input >>= parse
+      decodeJsonb :: Either Text (AltJ a)
+      decodeJsonb = fromColHelper PD.jsonb_ast input >>= parse
 
 type FromCol :: Type -> Constraint
 class FromCol a where
