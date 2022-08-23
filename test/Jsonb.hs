@@ -41,7 +41,7 @@ getPostgresConnect = do
 
 specJsonb :: Spec
 specJsonb = do
-  describe "Feelings" $ do
+  describe "Decoding JSON and JSONB" $ do
     it "Querying 'json' from PostgreSQL" $ do
       pg <- getPostgresConnect
       SingleRow (Identity (i :: BS.ByteString)) <-

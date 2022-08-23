@@ -11,7 +11,6 @@ services:
       POSTGRES_DB: "hasura"
     volumes:
         - postgres-data:/var/lib/postgresql/data
-        - ./docker-compose/postgres/init.sh:/docker-entrypoint-initdb.d/init-hasura.sh:ro
 
 volumes:
   postgres-data:
