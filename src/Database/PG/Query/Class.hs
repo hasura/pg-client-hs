@@ -79,17 +79,6 @@ newtype SingleRow a = SingleRow
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
--- | JSONB output starts with a ASCII SOH byte \x1
--- if we find it, drop it, the rest should be valid JSON
-dropFirst :: ByteString -> ByteString
-dropFirst bs =
-  case uncons bs of
-    Just (bsHead, bsTail) ->
-      if bsHead == 1
-        then bsTail
-        else bs
-    Nothing -> bs
-
 instance (FromJSON a) => FromCol (AltJ a) where
   fromCol =
     decodeJson >=> parse
@@ -99,6 +88,17 @@ instance (FromJSON a) => FromCol (AltJ a) where
 
       decodeJson :: Maybe ByteString -> Either Text Value
       decodeJson = fromColHelper PD.json_ast . fmap dropFirst
+
+      -- JSONB output starts with a ASCII SOH byte \x1
+      -- if we find it, drop it, the rest should be valid JSON
+      dropFirst :: ByteString -> ByteString
+      dropFirst bs =
+        case uncons bs of
+          Just (bsHead, bsTail) ->
+            if bsHead == 1
+              then bsTail
+              else bs
+          Nothing -> bs
 
 type FromCol :: Type -> Constraint
 class FromCol a where
