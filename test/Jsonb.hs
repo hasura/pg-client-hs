@@ -36,13 +36,6 @@ getPostgresConnect = do
     { ciDetails = CDDatabaseURI dbUri
     }
 
-getCockroachConnect :: (MonadIO m) => m ConnInfo
-getCockroachConnect = do
-  dbUri <- getPgUri
-  pure $ defaultConnInfo
-    { ciDetails = CDDatabaseURI dbUri
-    }
-
 specJsonb :: Spec
 specJsonb = do
   describe "Feelings" $ do
@@ -58,29 +51,10 @@ specJsonb = do
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
       i `shouldSatisfy` const True
 
-    it "Querying 'json' from CockroachDB" $ do
-      cockroach <- getCockroachConnect
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroach
-        (rawQE show "select '{\"hey\":42}'::json" [] False)
-      i `shouldSatisfy` const True
-
-    it "Querying 'jsonb' from CockroachDB (note the difference in formatting and \\SOH prefix)" $ do
-      cockroach <- getCockroachConnect
-      SingleRow (Identity (i :: BS.ByteString)) <- runTxT cockroach
-        (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      i `shouldSatisfy` const True
-
     it "Querying 'jsonb' from PostgreSQL" $ do
-      -- Note that 'AltJ' is simply a newtype wrapper that directs 'FromCol' to use 'FromJSON' to produce a Haskell Value of the specified type.
       pg <- getPostgresConnect
       SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT pg
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      i `shouldSatisfy` const True
-
-    it "Querying 'jsonb' from CockroachDB" $ do
-      cockroach <- getCockroachConnect
-      SingleRow (Identity (AltJ (i :: TestValue))) <- runTxT cockroach
-        (rawQE show "select '{\"hey\":42}'::json" [] False)
       i `shouldSatisfy` const True
 
 instance FromPGConnErr String where
