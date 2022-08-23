@@ -1,6 +1,7 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# OPTIONS_GHC -Wno-unused-imports -Wno-orphans -Wno-name-shadowing #-}
@@ -28,6 +29,9 @@ newtype TestValue = TestValue {hey :: Int}
 
 instance J.FromJSON TestValue
 
+instance Show (AltJ TestValue) where
+  show (AltJ tv) = show tv
+
 getPgUri :: (MonadIO m) => m BS.ByteString
 getPgUri = liftIO $ fromString <$> Env.getEnv "DATABASE_URL"
 
@@ -42,38 +46,45 @@ getPostgresConnect = do
 specJsonb :: Spec
 specJsonb = do
   describe "Decoding JSON and JSONB" $ do
-    it "Querying 'json' from PostgreSQL" $ do
+    it "Querying 'json' from PostgreSQL succeeds" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (i :: BS.ByteString)) <-
+      result <-
         runTxT
           pg
           (rawQE show "select '{\"hey\":42}'::json" [] False)
-      i `shouldSatisfy` const True
 
-    it "Querying 'jsonb' from PostgreSQL (note the difference in formatting and \\SOH prefix)" $ do
+      result `shouldSatisfy` \case
+        (Right (SingleRow (Identity (_ :: BS.ByteString)))) -> True
+        Left e -> error e
+
+    it "Querying 'jsonb' from PostgreSQL (note the difference in formatting and \\SOH prefix) succeeds" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (i :: BS.ByteString)) <-
+      result <-
         runTxT
           pg
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      i `shouldSatisfy` const True
 
-    it "Querying 'jsonb' from PostgreSQL" $ do
+      result `shouldSatisfy` \case
+        Right (SingleRow (Identity (_ :: BS.ByteString))) -> True
+        Left e -> error e
+
+    it "Querying 'jsonb' from PostgreSQL succeeds" $ do
       pg <- getPostgresConnect
-      SingleRow (Identity (AltJ (i :: TestValue))) <-
+      result <-
         runTxT
           pg
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
-      i `shouldSatisfy` const True
+
+      result `shouldSatisfy` \case
+        Right (SingleRow (Identity (AltJ (_ :: TestValue)))) -> True
+        Left e -> error e
 
 instance FromPGConnErr String where
   fromPGConnErr = show
 
-runTxT :: forall a. ConnInfo -> TxET String IO a -> IO a
+runTxT :: forall a. ConnInfo -> TxET String IO a -> IO (Either String a)
 runTxT conn q = do
   pool <- initPGPool conn defaultConnParams (const (return ()))
-  x :: Either String a <- runExceptT $ runTx' pool q
+  x <- runExceptT $ runTx' pool q
   destroyPGPool pool
-  case x of
-    Left e -> error e
-    Right r -> return r
+  pure x
