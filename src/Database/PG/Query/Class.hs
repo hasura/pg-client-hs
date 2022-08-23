@@ -24,6 +24,7 @@ where
 
 -------------------------------------------------------------------------------
 
+import Control.Monad ((>=>))
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
@@ -32,7 +33,7 @@ import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.Bifunctor (first)
-import Data.ByteString (ByteString)
+import Data.ByteString (ByteString, uncons)
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
@@ -78,23 +79,26 @@ newtype SingleRow a = SingleRow
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
--- | because of CockroachDB we don't know whether we're getting JSON or JSONB
--- data back. Therefore we try one and then the other.
+-- | JSONB output starts with a ASCII SOH byte \x1
+-- if we find it, drop it, the rest should be valid JSON
+dropFirst :: ByteString -> ByteString
+dropFirst bs =
+  case uncons bs of
+    Just (bsHead, bsTail) ->
+      if bsHead == 1
+        then bsTail
+        else bs
+    Nothing -> bs
+
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol input = do
-    jsonValue <- case decodeJsonb of
-      Right result -> pure result
-      _ -> decodeJson
-    parse jsonValue
+  fromCol =
+    decodeJson >=> parse
     where
       parse :: Value -> Either Text (AltJ a)
       parse = fmap AltJ . first fromString . parseEither parseJSON
 
-      decodeJson :: Either Text Value
-      decodeJson = fromColHelper PD.json_ast input
-
-      decodeJsonb :: Either Text Value
-      decodeJsonb = fromColHelper PD.jsonb_ast input
+      decodeJson :: Maybe ByteString -> Either Text Value
+      decodeJson = fromColHelper PD.json_ast . fmap dropFirst
 
 type FromCol :: Type -> Constraint
 class FromCol a where

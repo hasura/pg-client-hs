@@ -5,10 +5,14 @@ all:
 # in this repo
 DOCKER_POSTGRES_DATABASE_URL=postgresql://hasura:hasura@127.0.0.1:64001/hasura
 
+.PHONY: ormolu
+ormolu:
+	find src test bench -name '*.hs' | xargs ormolu -ie
+
 .PHONY: format
 format:
 	cabal-fmt -i pg-client.cabal
-	find src test bench -name '*.hs' | xargs ormolu -ie
+	make ormolu
 
 PROJECT ?= cabal.project
 CABAL = cabal --project=$(PROJECT)

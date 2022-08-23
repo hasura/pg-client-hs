@@ -57,7 +57,7 @@ specJsonb = do
         (Right (SingleRow (Identity (_ :: BS.ByteString)))) -> True
         Left e -> error e
 
-    it "Querying 'jsonb' from PostgreSQL (note the difference in formatting and \\SOH prefix) succeeds" $ do
+    it "Querying 'jsonb' from PostgreSQL succeeds" $ do
       pg <- getPostgresConnect
       result <-
         runTxT
@@ -68,7 +68,18 @@ specJsonb = do
         Right (SingleRow (Identity (_ :: BS.ByteString))) -> True
         Left e -> error e
 
-    it "Querying 'jsonb' from PostgreSQL succeeds" $ do
+    it "Querying 'json' from PostgreSQL into AltJ type succeeds" $ do
+      pg <- getPostgresConnect
+      result <-
+        runTxT
+          pg
+          (rawQE show "select '{\"hey\":42}'::json" [] False)
+
+      result `shouldSatisfy` \case
+        Right (SingleRow (Identity (AltJ (_ :: TestValue)))) -> True
+        Left e -> error e
+
+    it "Querying 'jsonb' from PostgreSQL into AltJ type succeeds" $ do
       pg <- getPostgresConnect
       result <-
         runTxT
