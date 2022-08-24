@@ -62,4 +62,4 @@ jobs:
         env:
           DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
         run: |
-          make test-all PROJECT='ci/${{ matrix.ghc }}/ci.project'
+          make test-ci PROJECT='ci/${{ matrix.ghc }}/ci.project'

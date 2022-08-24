@@ -87,6 +87,7 @@ test-suite pg-client-test
   other-modules:
     Interrupt
     Timeout
+    Jsonb
 
   build-depends:
     , async
@@ -97,6 +98,9 @@ test-suite pg-client-test
     , safe-exceptions
     , time
     , transformers
+    , aeson
+    , mtl
+    , postgresql-libpq
 
 benchmark pg-client-bench
   import:         common-all

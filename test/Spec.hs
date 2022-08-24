@@ -14,6 +14,7 @@ import Control.Monad.Trans.Except (runExceptT)
 import Data.ByteString.Char8 qualified as BS
 import Database.PG.Query
 import Interrupt (specInterrupt)
+import Jsonb (specJsonb)
 import System.Environment qualified as Env
 import Test.Hspec (describe, hspec, it, shouldReturn)
 import Timeout (specTimeout)
@@ -47,6 +48,7 @@ main = hspec $ do
       releaseAndAcquireWithTimeoutNegative `shouldReturn` Nothing
   specInterrupt
   specTimeout
+  specJsonb
 
 mkPool :: IO PGPool
 mkPool = do

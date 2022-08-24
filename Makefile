@@ -1,10 +1,18 @@
 .PHONY: all
 all:
 
+# when running locally, use the postgres instance from the `docker-compose.yml`
+# in this repo
+DOCKER_POSTGRES_DATABASE_URL=postgresql://hasura:hasura@127.0.0.1:64001/hasura
+
+.PHONY: ormolu
+ormolu:
+	find src test bench -name '*.hs' | xargs ormolu -ie
+
 .PHONY: format
 format:
 	cabal-fmt -i pg-client.cabal
-	find src test bench -name '*.hs' | xargs ormolu -ie
+	make ormolu
 
 PROJECT ?= cabal.project
 CABAL = cabal --project=$(PROJECT)
@@ -46,12 +54,30 @@ build-all:
 	  --enable-benchmarks \
 	  all
 
-.PHONY: test-all
-test-all:
+.PHONY: start-dbs
+start-dbs:
+	docker-compose up -d
+	sleep 10
+
+.PHONY: stop-dbs
+stop-dbs:
+	docker-compose down -v
+
+.PHONY: test-ci
+test-ci:
 	$(CABAL) test \
 	  --enable-tests \
 	  --enable-benchmarks \
 	  all
+
+.PHONY: test-all
+test-all: start-dbs
+	export DATABASE_URL=$(DOCKER_POSTGRES_DATABASE_URL) && \
+	$(CABAL) test \
+	  --enable-tests \
+	  --enable-benchmarks \
+	  all
+	make stop-dbs
 
 .PHONY: ghcid
 ghcid:

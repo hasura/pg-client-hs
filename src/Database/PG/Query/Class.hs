@@ -2,6 +2,7 @@
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Database.PG.Query.Class
   ( WithCount (..),
@@ -23,13 +24,16 @@ where
 
 -------------------------------------------------------------------------------
 
+import Control.Monad ((>=>))
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
 import Control.Monad.Trans.Except (ExceptT (..))
-import Data.Aeson (FromJSON, ToJSON, Value, eitherDecodeStrict, encode)
+import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
+import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
-import Data.ByteString (ByteString)
+import Data.Bifunctor (first)
+import Data.ByteString (ByteString, uncons)
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
@@ -75,12 +79,26 @@ newtype SingleRow a = SingleRow
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
-mapEither :: (a -> c) -> (b -> d) -> Either a b -> Either c d
-mapEither f _ (Left a) = Left $ f a
-mapEither _ f (Right b) = Right $ f b
-
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol = fromColHelper (PD.fn $ mapEither fromString AltJ . eitherDecodeStrict)
+  fromCol =
+    decodeJson >=> parse
+    where
+      parse :: Value -> Either Text (AltJ a)
+      parse = fmap AltJ . first fromString . parseEither parseJSON
+
+      decodeJson :: Maybe ByteString -> Either Text Value
+      decodeJson = fromColHelper PD.json_ast . fmap dropFirst
+
+      -- JSONB output starts with a ASCII SOH byte \x1
+      -- if we find it, drop it, the rest should be valid JSON
+      dropFirst :: ByteString -> ByteString
+      dropFirst bs =
+        case uncons bs of
+          Just (bsHead, bsTail) ->
+            if bsHead == 1
+              then bsTail
+              else bs
+          Nothing -> bs
 
 type FromCol :: Type -> Constraint
 class FromCol a where
