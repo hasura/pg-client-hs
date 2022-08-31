@@ -88,7 +88,7 @@ specJsonb = do
           (rawQE show "select '{\"hey\":42}'::json" [] False)
 
       result `shouldSatisfy` \case
-        Right (SingleRow (Identity (AltJ (_ :: TestValue)))) -> True
+        Right (SingleRow (Identity (AltJ (TestValue i)))) -> i == 42
         Left e -> error e
 
     it "Querying 'jsonb' from PostgreSQL into AltJ type succeeds" $ do
@@ -99,7 +99,7 @@ specJsonb = do
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
 
       result `shouldSatisfy` \case
-        Right (SingleRow (Identity (AltJ (_ :: TestValue)))) -> True
+        Right (SingleRow (Identity (AltJ (TestValue i)))) -> i == 42
         Left e -> error e
 
 instance FromPGConnErr String where

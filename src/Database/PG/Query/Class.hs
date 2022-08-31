@@ -29,7 +29,7 @@ import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
 import Control.Monad.Trans.Except (ExceptT (..))
-import Data.Aeson (FromJSON, ToJSON, Value(String), encode, parseJSON)
+import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.Bifunctor (first)
@@ -80,9 +80,6 @@ newtype SingleRow a = SingleRow
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
-instance {-# OVERLAPPING #-} FromJSON (AltJ Value) where
-  parseJSON _ = pure (AltJ (String "Hello, Wimbledon"))
-
 instance (FromJSON a) => FromCol (AltJ a) where
   fromCol =
     decodeJson >=> parse
@@ -93,11 +90,13 @@ instance (FromJSON a) => FromCol (AltJ a) where
       decodeJson :: Maybe ByteString -> Either Text Value
       decodeJson = fromColHelper PD.json_ast . fmap dropSOH
 
-      -- JSONB output starts with a ASCII SOH byte \x1
-      -- if we find it, drop it and any others that may occur
-      -- the rest should be valid JSON
-      dropSOH :: ByteString -> ByteString
-      dropSOH = BS.filter (1 /=)
+-- JSONB output starts with a ASCII SOH byte \x1
+-- if we find it, drop it and any others that may occur
+-- the rest should be valid JSON
+dropSOH :: ByteString -> ByteString
+dropSOH = BS.filter (1 /=)
+
+
 
 type FromCol :: Type -> Constraint
 class FromCol a where
@@ -139,7 +138,7 @@ instance FromCol Lazy.Text where
   fromCol = fromColHelper PD.text_lazy
 
 instance FromCol ByteString where
-  fromCol = fromColHelper PD.bytea_strict
+  fromCol = fromColHelper (dropSOH <$> PD.bytea_strict)
 
 instance FromCol Lazy.ByteString where
   fromCol = fromColHelper PD.bytea_lazy
