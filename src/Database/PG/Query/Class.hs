@@ -94,13 +94,7 @@ instance (FromJSON a) => FromCol (AltJ a) where
       -- if we find it, drop it and any others that may occur
       -- the rest should be valid JSON
       dropSOH :: ByteString -> ByteString
-      dropSOH bs =
-        case BS.uncons bs of
-          Just (bsHead, bsTail) ->
-            if bsHead == 1
-              then BS.filter (1 /=) bsTail
-              else bs
-          Nothing -> bs
+      dropSOH = BS.filter (1 /=)
 
 type FromCol :: Type -> Constraint
 class FromCol a where
