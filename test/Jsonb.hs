@@ -8,7 +8,6 @@
 
 module Jsonb (specJsonb) where
 
-import Data.Maybe (isJust)
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -18,6 +17,7 @@ import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as LBS
 import Data.Either (isRight)
 import Data.Kind (Type)
+import Data.Maybe (isJust)
 import Data.String
 import Database.PG.Query
 import Database.PG.Query.Connection
