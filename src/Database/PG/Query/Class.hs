@@ -88,15 +88,18 @@ instance (FromJSON a) => FromCol (AltJ a) where
       parse = fmap AltJ . first fromString . parseEither parseJSON
 
       decodeJson :: Maybe ByteString -> Either Text Value
-      decodeJson = fromColHelper PD.json_ast . fmap dropSOH
+      decodeJson = fromColHelper PD.json_ast . fmap dropFirst
 
 -- JSONB output starts with a ASCII SOH byte \x1
--- if we find it, drop it and any others that may occur
--- the rest should be valid JSON
-dropSOH :: ByteString -> ByteString
-dropSOH = BS.filter (1 /=)
-
-
+-- if we find it, drop it, the rest should be valid JSON
+dropFirst :: ByteString -> ByteString
+dropFirst bs =
+  case BS.uncons bs of
+    Just (bsHead, bsTail) ->
+      if bsHead == 1
+        then bsTail
+        else bs
+    Nothing -> bs
 
 type FromCol :: Type -> Constraint
 class FromCol a where
@@ -138,7 +141,7 @@ instance FromCol Lazy.Text where
   fromCol = fromColHelper PD.text_lazy
 
 instance FromCol ByteString where
-  fromCol = fromColHelper (dropSOH <$> PD.bytea_strict)
+  fromCol = fromColHelper (dropFirst <$> PD.bytea_strict)
 
 instance FromCol Lazy.ByteString where
   fromCol = fromColHelper PD.bytea_lazy

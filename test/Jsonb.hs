@@ -4,11 +4,11 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-{-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-unused-imports -Wno-orphans -Wno-name-shadowing #-}
 
 module Jsonb (specJsonb) where
 
+import Data.Maybe (isJust)
 import Control.Monad.Except
 import Control.Monad.Identity
 import Control.Monad.Reader
@@ -50,13 +50,11 @@ getPostgresConnect = do
       { ciDetails = CDDatabaseURI dbUri
       }
 
+containsSOH :: BS.ByteString -> Bool
+containsSOH = isJust . BS.find (1 ==)
+
 specJsonb :: Spec
 specJsonb = do
-  describe "AltJ encoder works with SOH mid-bytestring" $ do
-    it "is great again" $ do
-      input <- LBS.readFile "./Test/static/soh-in-response.json"
-      fromCol @(AltJ TestValue) (Just (LBS.toStrict input)) `shouldSatisfy` isRight
-
   describe "Decoding JSON and JSONB" $ do
     it "Querying 'json' from PostgreSQL succeeds" $ do
       pg <- getPostgresConnect
@@ -66,7 +64,7 @@ specJsonb = do
           (rawQE show "select '{\"hey\":42}'::json" [] False)
 
       result `shouldSatisfy` \case
-        (Right (SingleRow (Identity (_ :: BS.ByteString)))) -> True
+        (Right (SingleRow (Identity (a :: BS.ByteString)))) -> not (containsSOH a)
         Left e -> error e
 
     it "Querying 'jsonb' from PostgreSQL succeeds" $ do
@@ -77,7 +75,7 @@ specJsonb = do
           (rawQE show "select '{\"hey\":42}'::jsonb" [] False)
 
       result `shouldSatisfy` \case
-        Right (SingleRow (Identity (_ :: BS.ByteString))) -> True
+        (Right (SingleRow (Identity (a :: BS.ByteString)))) -> not (containsSOH a)
         Left e -> error e
 
     it "Querying 'json' from PostgreSQL into AltJ type succeeds" $ do
