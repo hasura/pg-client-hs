@@ -33,7 +33,8 @@ import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
 import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.Bifunctor (first)
-import Data.ByteString (ByteString, uncons)
+import Data.ByteString (ByteString)
+import Data.ByteString qualified as BS
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
 import Data.Hashable (Hashable)
@@ -87,16 +88,17 @@ instance (FromJSON a) => FromCol (AltJ a) where
       parse = fmap AltJ . first fromString . parseEither parseJSON
 
       decodeJson :: Maybe ByteString -> Either Text Value
-      decodeJson = fromColHelper PD.json_ast . fmap dropFirst
+      decodeJson = fromColHelper PD.json_ast . fmap dropSOH
 
       -- JSONB output starts with a ASCII SOH byte \x1
-      -- if we find it, drop it, the rest should be valid JSON
-      dropFirst :: ByteString -> ByteString
-      dropFirst bs =
-        case uncons bs of
+      -- if we find it, drop it and any others that may occur
+      -- the rest should be valid JSON
+      dropSOH :: ByteString -> ByteString
+      dropSOH bs =
+        case BS.uncons bs of
           Just (bsHead, bsTail) ->
             if bsHead == 1
-              then bsTail
+              then BS.filter (1 /=) bsTail
               else bs
           Nothing -> bs
 
