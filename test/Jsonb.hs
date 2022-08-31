@@ -50,6 +50,8 @@ getPostgresConnect = do
       { ciDetails = CDDatabaseURI dbUri
       }
 
+-- does the response contain a `SOH` header value (we should be filtering these
+-- out)
 containsSOH :: BS.ByteString -> Bool
 containsSOH = isJust . BS.find (1 ==)
 
