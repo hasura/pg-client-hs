@@ -29,7 +29,7 @@ import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
 import Control.Monad.Trans.Except (ExceptT (..))
-import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
+import Data.Aeson (FromJSON, ToJSON, Value(String), encode, parseJSON)
 import Data.Aeson.Types (parseEither)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
 import Data.Bifunctor (first)
@@ -79,6 +79,9 @@ newtype SingleRow a = SingleRow
 
 type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
+
+instance {-# OVERLAPPING #-} FromJSON (AltJ Value) where
+  parseJSON _ = pure (AltJ (String "Hello, Wimbledon"))
 
 instance (FromJSON a) => FromCol (AltJ a) where
   fromCol =
