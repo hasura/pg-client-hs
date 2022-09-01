@@ -24,15 +24,13 @@ where
 
 -------------------------------------------------------------------------------
 
-import Control.Monad ((>=>))
 import Control.Monad.Except (throwError)
 import Control.Monad.IO.Class (liftIO)
 import Control.Monad.Identity (Identity (..))
 import Control.Monad.Trans.Except (ExceptT (..))
-import Data.Aeson (FromJSON, ToJSON, Value, encode, parseJSON)
-import Data.Aeson.Types (parseEither)
+import Data.Aeson (FromJSON, ToJSON, Value, eitherDecodeStrict, encode)
 import Data.Attoparsec.ByteString.Char8 qualified as Atto
-import Data.Bifunctor (first)
+import Data.Bifunctor (bimap)
 import Data.ByteString (ByteString, uncons)
 import Data.ByteString.Lazy qualified as Lazy (ByteString)
 import Data.Foldable (for_)
@@ -80,15 +78,8 @@ type AltJ :: Type -> Type
 newtype AltJ a = AltJ {getAltJ :: a}
 
 instance (FromJSON a) => FromCol (AltJ a) where
-  fromCol =
-    decodeJson >=> parse
+  fromCol = fromColHelper (PD.fn $ bimap fromString AltJ . eitherDecodeStrict . dropFirst)
     where
-      parse :: Value -> Either Text (AltJ a)
-      parse = fmap AltJ . first fromString . parseEither parseJSON
-
-      decodeJson :: Maybe ByteString -> Either Text Value
-      decodeJson = fromColHelper PD.json_ast . fmap dropFirst
-
       -- JSONB output starts with a ASCII SOH byte \x1
       -- if we find it, drop it, the rest should be valid JSON
       dropFirst :: ByteString -> ByteString
