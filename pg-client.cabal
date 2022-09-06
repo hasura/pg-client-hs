@@ -36,6 +36,7 @@ common common-all
     NoImplicitPrelude
     ImportQualifiedPost
     StandaloneKindSignatures
+    Strict
 
 library
   import:          common-all
