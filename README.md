@@ -6,7 +6,7 @@ A low level Postgres client library for Haskell. Used at Hasura in various produ
 
 The code for this library has now moved to another git repository, and can be
 found here: 
-[graphql-engine](https://github.com/hasura/graphql-engine/tree/main/server/lib/pg-client-hs) repository.
+[graphql-engine](https://github.com/hasura/graphql-engine/tree/master/server/lib/pg-client-hs) repository.
 
 ## Style
 
